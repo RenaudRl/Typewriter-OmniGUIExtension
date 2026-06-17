@@ -451,6 +451,7 @@ data class SlotAnimationData(
 )
 
 /** Advanced layout definitions. */
+@kotlinx.serialization.Serializable
 sealed interface LayoutData {
     val id: String
 }
