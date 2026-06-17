@@ -118,7 +118,7 @@ Supports Minecraft's built-in GUI types: `ANVIL`, `ENCHANTING_TABLE`, `SMITHING`
 
 ## Documentation
 
-Full documentation available at [BTC Studio Docs](https://docs.btcstudio.io/extensions/Typewriter-GUIExtension/Home).
+Full documentation available at [BTC Studio Docs](https://docs.borntocraftstudio.net/extensions/Typewriter-GUIExtension/Home).
 
 ## Integration
 
