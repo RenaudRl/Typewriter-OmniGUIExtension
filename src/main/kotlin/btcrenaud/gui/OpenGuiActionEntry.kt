@@ -35,6 +35,8 @@ import btcrenaud.gui.api.Viewport
 import com.typewritermc.engine.paper.utils.Sound
 import com.typewritermc.core.entries.emptyRef
 import btcrenaud.gui.api.StorageGuiSlot
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 
 /**
  * Single entry used to open a GUI for a player. Unlike the original GUI extensions
@@ -159,6 +161,7 @@ class OpenGuiActionEntry(
 /** Data for a single GUI slot. */
 enum class Direction { right, left, down, up }
 
+@Serializable
 data class GuiItemData(
     @Help("The item to display. Leave empty to use the item held in the player's hand.")
     val item: Var<Item> = ConstVar(Item.Empty),
@@ -410,8 +413,9 @@ data class GuiAudioData(
 )
 
 /** Per-click-type interaction configuration. Each entry maps a click type to commands and triggers. */
+@Serializable
 data class InteractionData(
-    @Help("Click type that triggers this interaction: LEFT, RIGHT, SHIFT_LEFT, SHIFT_RIGHT, MIDDLE, DOUBLE, SWAP_OFFHAND, DROP, or NUMBER_KEY_1-9.")
+    @Help("Click type that triggers this interaction.")
     val type: InteractionType = InteractionType.LEFT_CLICK,
     @Help("Commands executed when this interaction fires. Supports PlaceholderAPI.")
     val commands: List<Var<String>> = emptyList(),
@@ -424,6 +428,7 @@ data class InteractionData(
 )
 
 /** Input dialog configuration. Opens a sign-like dialog when the slot is clicked. */
+@Serializable
 data class InputData(
     @Help("If true, the input dialog is enabled for this slot.")
     val enabled: Boolean = true,
@@ -438,9 +443,10 @@ data class InputData(
     @Help("Triggers executed after input is submitted.")
     val onInputTriggers: List<Ref<TriggerableEntry>> = emptyList()
 )
-
+/** Configuration for a slot animation trigger when the menu opens. */
+@Serializable
 data class SlotAnimationData(
-    @Help("Target X position for the slot animation.")
+    @Help("Starting X position for the slot animation.")
     val targetX: Int = 0,
     @Help("Target Y position for the slot animation.")
     val targetY: Int = 0,
@@ -451,12 +457,14 @@ data class SlotAnimationData(
 )
 
 /** Advanced layout definitions. */
-@kotlinx.serialization.Serializable
+@Serializable
 sealed interface LayoutData {
     val id: String
 }
 
 /** A simple list of items with optional filling. This is the most common layout type. */
+@Serializable
+@SerialName("simple")
 @AlgebraicTypeInfo("simple", com.typewritermc.core.books.pages.Colors.BLUE, "mdi:grid")
 data class SimpleLayoutData(
     @Help("Unique identifier for this layout. Used by mainLayoutId and frame references.")
@@ -466,6 +474,8 @@ data class SimpleLayoutData(
 ) : LayoutData
 
 /** A layout that supports multiple pages of items. */
+@Serializable
+@SerialName("paginated")
 @AlgebraicTypeInfo("paginated", com.typewritermc.core.books.pages.Colors.ORANGE, "mdi:book-open-page-variant")
 data class PaginatedLayoutData(
     @Help("Unique identifier for this layout.")
@@ -485,6 +495,8 @@ data class PaginatedLayoutData(
 ) : LayoutData
 
 /** A layout that can be scrolled if the content exceeds the viewport. */
+@Serializable
+@SerialName("scrollable")
 @AlgebraicTypeInfo("scrollable", com.typewritermc.core.books.pages.Colors.GREEN, "mdi:mouse-scroll-wheel")
 data class ScrollableLayoutData(
     @Help("Unique identifier for this layout.")
@@ -502,6 +514,7 @@ data class ScrollableLayoutData(
 ) : LayoutData
 
 /** Configuration for a scroll navigation button. */
+@Serializable
 data class ScrollButtonData(
     @Help("The item that acts as a scroll button (arrow, head, etc.).")
     val item: GuiItemData = GuiItemData(),
@@ -514,6 +527,8 @@ data class ScrollButtonData(
 enum class ScrollDirection { UP, DOWN, LEFT, RIGHT }
 
 /** A layout composed of multiple independent regions (frames), each with its own scrollable content. */
+@Serializable
+@SerialName("frame")
 @AlgebraicTypeInfo("frame", com.typewritermc.core.books.pages.Colors.PURPLE, "mdi:view-quilt")
 data class FrameLayoutData(
     @Help("Unique identifier for this layout.")
@@ -523,6 +538,8 @@ data class FrameLayoutData(
 ) : LayoutData
 
 /** A layout specifically for Books. Displays pages of formatted text. */
+@Serializable
+@SerialName("book")
 @AlgebraicTypeInfo("book", com.typewritermc.core.books.pages.Colors.BLUE, "mdi:book-open-variant")
 data class BookLayoutData(
     @Help("Unique identifier for this layout.")
@@ -532,6 +549,8 @@ data class BookLayoutData(
 ) : LayoutData
 
 /** A layout specifically for Merchant/Villager trades. */
+@Serializable
+@SerialName("merchant")
 @AlgebraicTypeInfo("merchant", com.typewritermc.core.books.pages.Colors.GREEN, "mdi:store")
 data class MerchantLayoutData(
     @Help("Unique identifier for this layout.")
@@ -546,6 +565,7 @@ data class MerchantLayoutData(
  * a persistent storage slot backed by the referenced artifact.
  * Click handling is delegated to [GuiStorageService].
  */
+@Serializable
 data class StorageSlotData(
     @Help("Reference to a gui_storage artifact entry")
     val entry: Ref<btcrenaud.gui.entries.GuiStorageEntry> = emptyRef(),
@@ -576,6 +596,7 @@ data class StorageSlotData(
 )
 
 /** A single trade offer for a Merchant/Villager layout. */
+@Serializable
 data class TradeData(
     @Help("The item the player receives from this trade.")
     val result: Var<Item> = ConstVar(Item.Empty),
@@ -622,6 +643,7 @@ data class TradeData(
 }
 
 /** A single frame (independent region) within a FrameLayout. Each frame has its own scrollable content. */
+@Serializable
 data class FrameData(
     @Help("Unique identifier for this frame.")
     val id: String = "",
