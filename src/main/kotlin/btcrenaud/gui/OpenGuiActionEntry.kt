@@ -360,7 +360,20 @@ object GuiSlotBuilder {
                     onReachRequired = storage.onReachRequired,
                     consumeItems = storage.consumeOnReach,
                     forceStorage = storage.forceStorage,
-                    accumulated = 0
+                    accumulated = 0,
+                    allowPickup = data.allowPickup,
+                    isGhost = data.isGhost,
+                    commands = emptyList(), // Commands are on interactions
+                    triggers = data.triggers,
+                    modifiers = data.modifiers,
+                    interactions = allInteractions,
+                    input = data.input,
+                    storage = data.storage,
+                    animation = data.animation?.let { anim ->
+                        btcrenaud.gui.api.SlotAnimation(anim.targetX, anim.targetY, anim.duration, anim.easing)
+                    },
+                    cooldownTicks = data.cooldownTicks,
+                    tag = null
                 )
             } else {
                 baseSlot
@@ -558,6 +571,47 @@ data class MerchantLayoutData(
     @Help("List of trade offers displayed in the merchant GUI.")
     val trades: List<TradeData> = emptyList()
 ) : LayoutData
+
+/** A layout that provides persistent item storage slots backed by a GuiStorageEntry artifact. */
+@Serializable
+@SerialName("storage")
+@AlgebraicTypeInfo("storage", com.typewritermc.core.books.pages.Colors.GREEN, "fa6-solid:box-open")
+data class StorageLayoutData(
+    @Help("Unique identifier for this layout.")
+    override val id: String = "",
+    @Help("Reference to a gui_storage artifact entry that persists the stored items.")
+    val entry: Ref<btcrenaud.gui.entries.GuiStorageEntry> = emptyRef(),
+    @Help("Group key for storage scope. Use %player_uuid% for per-player, or a group reference for shared storage.")
+    val groupKey: Var<String> = ConstVar("%player_uuid%"),
+    @Help("List of storage slot definitions (position, maxStack, triggers, etc.).")
+    val slots: List<StorageSlotLayoutItemData> = emptyList()
+) : LayoutData
+
+@Serializable
+data class StorageSlotLayoutItemData(
+    @Help("X position (column) of this storage slot. 0 = leftmost.")
+    val x: Int = 0,
+    @Help("Y position (row) of this storage slot. 0 = top row.")
+    val y: Int = 0,
+    @Help("Maximum item amount allowed in this slot (1-64).")
+    val maxStack: Int = 64,
+    @Help("If true, the slot content is lost when the menu closes.")
+    val temporary: Boolean = false,
+    @Help("Placeholder item shown when the slot is empty.")
+    val placeholder: Var<Item>? = null,
+    @Help("Triggers executed when the slot becomes non-empty.")
+    val onFill: List<Ref<TriggerableEntry>> = emptyList(),
+    @Help("Triggers executed when the slot becomes empty.")
+    val onEmpty: List<Ref<TriggerableEntry>> = emptyList(),
+    @Help("If set, only items matching this type can be stored in this slot.")
+    val requiredItem: Var<Item>? = null,
+    @Help("Number of items that must be deposited to trigger onReachRequired.")
+    val requiredAmount: Int = 0,
+    @Help("Triggers executed when the required amount is reached.")
+    val onReachRequired: List<Ref<TriggerableEntry>> = emptyList(),
+    @Help("If true, deposited items are consumed when requiredAmount is reached.")
+    val consumeItems: Boolean = true
+)
 
 /** Storage slot configuration linked to a [GuiStorageEntry] artifact.
  *

@@ -10,7 +10,7 @@ import org.bukkit.inventory.ItemStack
 import kotlin.math.abs
 
 /**
- * A specialized layout for Skill Trees that automatically resolves 
+ * A specialized layout for Skill Trees that automatically resolves
  * directional connector items between core nodes.
  */
 class SkillTreeLayout(
@@ -20,8 +20,34 @@ class SkillTreeLayout(
     val stateProvider: (connection: NodeConnection, session: MenuSessionService.ActiveSession) -> NodeState = { _, _ -> NodeState.UNLOCKED }
 ) : MenuLayout {
 
+    /**
+     * Cached settings with TTL to avoid Query.find on every render.
+     */
+    private data class CachedSettings(
+        val nodeDefaults: Map<NodeState, NodeDirectionalMap>,
+        val timestamp: Long
+    )
+
+    private var cachedSettings: CachedSettings? = null
+    private val cacheTtlMs = 5_000L
+
+    private fun getSettings(): Map<NodeState, NodeDirectionalMap> {
+        val now = System.currentTimeMillis()
+        val cached = cachedSettings
+        if (cached != null && (now - cached.timestamp) < cacheTtlMs) {
+            return cached.nodeDefaults
+        }
+        val settings = try {
+            Query.find<GuiSettingEntry>().firstOrNull()?.nodeDefaults ?: emptyMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
+        cachedSettings = CachedSettings(settings, now)
+        return settings
+    }
+
     override fun getSlots(session: MenuSessionService.ActiveSession, viewport: Viewport): List<GuiSlot> {
-        val settings = Query.find<GuiSettingEntry>().firstOrNull() ?: return emptyList()
+        val settings = getSettings()
         val slots = mutableMapOf<Pair<Int, Int>, GuiSlot>()
 
         // 1. Place Core Nodes
@@ -34,19 +60,19 @@ class SkillTreeLayout(
         for (conn in connections) {
             val from = coreNodes.find { it.id == conn.from } ?: continue
             val to = coreNodes.find { it.id == conn.to } ?: continue
-            
+
             fillPath(from.x, from.y, to.x, to.y, pathPoints)
         }
 
         // 3. Resolve Path Nodes (Connectors)
         for (point in pathPoints) {
             if (slots.containsKey(point)) continue // Core nodes take priority
-            
+
             val up = hasConnection(point.first, point.second - 1, pathPoints, coreNodes)
             val down = hasConnection(point.first, point.second + 1, pathPoints, coreNodes)
             val left = hasConnection(point.first - 1, point.second, pathPoints, coreNodes)
             val right = hasConnection(point.first + 1, point.second, pathPoints, coreNodes)
-            
+
             // Determine the connector state from the relevant connection context
             val relevantConnection = connections.find { conn ->
                 val from = coreNodes.find { it.id == conn.from }
@@ -54,8 +80,8 @@ class SkillTreeLayout(
                 from != null && to != null && point in pathPointsBetween(from, to)
             }
             val state = relevantConnection?.let { stateProvider(it, session) } ?: NodeState.UNLOCKED
-            val directionalMap = settings.nodeDefaults[state] ?: NodeDirectionalMap()
-            
+            val directionalMap = settings[state] ?: NodeDirectionalMap()
+
             val item = resolveConnector(directionalMap, up, down, left, right)
             if (item != Item.Empty) {
                 slots[point] = GuiSlot(point.first, point.second, item.build(session.player))
@@ -74,11 +100,11 @@ class SkillTreeLayout(
     private fun fillPath(x1: Int, y1: Int, x2: Int, y2: Int, path: MutableSet<Pair<Int, Int>>) {
         var cx = x1
         var cy = y1
-        
+
         // Manhattan path: Horizontal then Vertical
         val dx = if (x2 > x1) 1 else -1
         val dy = if (y2 > y1) 1 else -1
-        
+
         while (cx != x2) {
             cx += dx
             if (cx != x2 || cy != y2) path.add(cx to cy)

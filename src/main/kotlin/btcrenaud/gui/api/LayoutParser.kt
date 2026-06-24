@@ -3,6 +3,8 @@ package btcrenaud.gui.api
 import btcrenaud.gui.*
 import com.typewritermc.core.interaction.InteractionContext
 import org.bukkit.entity.Player
+import org.bukkit.inventory.ItemStack
+import org.bukkit.Material
 import com.typewritermc.engine.paper.utils.asMini
 
 object LayoutParser {
@@ -108,60 +110,8 @@ object LayoutParser {
                     }
                 }
 
-                // Default buttons if enabled and no custom buttons for those directions
-                if (data.showDefaultButtons) {
-                    val vw = data.virtualWidth ?: inner.virtualWidth
-                    val vh = data.virtualHeight ?: inner.virtualHeight
-                    
-                    if (vh > 1) { // Vertical scrolling
-                        if (down == null) {
-                            val downItem = org.bukkit.inventory.ItemStack(org.bukkit.Material.ARROW)
-                            val downMeta = downItem.itemMeta
-                            downMeta.displayName("<white>Scroll Down".asMini())
-                            downItem.itemMeta = downMeta
-                            down = GuiSlot(
-                                x = width - 1, y = 1,
-                                item = downItem,
-                                commands = listOf("gui:scroll 0 1 ${data.id}")
-                            )
-                        }
-                        if (up == null) {
-                            val upItem = org.bukkit.inventory.ItemStack(org.bukkit.Material.ARROW)
-                            val upMeta = upItem.itemMeta
-                            upMeta.displayName("<white>Scroll Up".asMini())
-                            upItem.itemMeta = upMeta
-                            up = GuiSlot(
-                                x = width - 1, y = 0,
-                                item = upItem,
-                                commands = listOf("gui:scroll 0 -1 ${data.id}")
-                            )
-                        }
-                    }
-                    if (vw > 9) { // Horizontal scrolling
-                        if (right == null) {
-                            val rightItem = org.bukkit.inventory.ItemStack(org.bukkit.Material.ARROW)
-                            val rightMeta = rightItem.itemMeta
-                            rightMeta.displayName("<white>Scroll Right".asMini())
-                            rightItem.itemMeta = rightMeta
-                            right = GuiSlot(
-                                x = width - 3, y = 0,
-                                item = rightItem,
-                                commands = listOf("gui:scroll 1 0 ${data.id}")
-                            )
-                        }
-                        if (left == null) {
-                            val leftItem = org.bukkit.inventory.ItemStack(org.bukkit.Material.ARROW)
-                            val leftMeta = leftItem.itemMeta
-                            leftMeta.displayName("<white>Scroll Left".asMini())
-                            leftItem.itemMeta = leftMeta
-                            left = GuiSlot(
-                                x = 0, y = 0,
-                                item = leftItem,
-                                commands = listOf("gui:scroll -1 0 ${data.id}")
-                            )
-                        }
-                    }
-                }
+                // Default buttons removed — users must configure their own navigation buttons
+                // via the entry's layoutPool buttons list.
 
                 ScrollableLayout(
                     layout = inner, 
@@ -184,6 +134,27 @@ object LayoutParser {
             }
             is BookLayoutData -> EmptyLayout // Handled at top level
             is MerchantLayoutData -> EmptyLayout // Handled at top level
+            is StorageLayoutData -> {
+                val storageEntry = data.entry.get() ?: return EmptyLayout
+                val groupKey = data.groupKey.get(player, context)
+                val slotConfigs = data.slots.map { slot ->
+                    StorageSlotConfig(
+                        x = slot.x, y = slot.y,
+                        slotIndex = slot.y * 9 + slot.x,
+                        maxStack = slot.maxStack,
+                        temporary = slot.temporary,
+                        placeholder = slot.placeholder?.get(player, context)
+                            ?.let { it.build(player, context).clone() } ?: ItemStack(Material.AIR),
+                        onFill = slot.onFill, onEmpty = slot.onEmpty,
+                        requiredItem = slot.requiredItem?.get(player, context)
+                            ?.let { it.build(player, context).clone() },
+                        requiredAmount = slot.requiredAmount,
+                        onReachRequired = slot.onReachRequired,
+                        consumeItems = slot.consumeItems
+                    )
+                }
+                StorageLayout(storageEntry, slotConfigs, { groupKey }, data.id)
+            }
         }
         visited.remove(layoutKey)
         cache[layoutKey] = result

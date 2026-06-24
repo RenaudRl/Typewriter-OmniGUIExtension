@@ -16,8 +16,8 @@ typewriter {
     namespace = "renaud"
 
     extension {
-        name = "OmniGUI"
-        shortDescription = "Advanced GUI system with 8 layout engines, persistent storage, and full MiniMessage support."
+        name = "GuiAndDialogs"
+        shortDescription = "Advanced GUI system with 8 layout engines and MiniMessage support."
         description = """Typewriter extension providing a complete menu system with 8 layout engines (Simple, Scrollable, Frame, Paginated, Composite, Book, Merchant), 23 inventory types, persistent item storage with per-player or group-based scoping, configurable click actions, and full MiniMessage formatting. Supports Paper and Folia server platforms. Foundation for 20+ Typewriter extensions requiring menus."""
         engineVersion = "0.9.0-beta-174"
         channel = com.typewritermc.moduleplugin.ReleaseChannel.BETA
@@ -29,6 +29,6 @@ typewriter {
     
 
 kotlin {
-    jvmToolchain(25)
+    jvmToolchain(21)
     
 }

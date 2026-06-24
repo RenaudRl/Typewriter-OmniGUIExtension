@@ -48,8 +48,66 @@ class StorageGuiSlot(
     val onReachRequired: List<Ref<TriggerableEntry>> = emptyList(),
     val consumeItems: Boolean = true,
     val forceStorage: Boolean = true,
-    val accumulated: Int = 0
-) : GuiSlot(x, y, item, allowPickup = false)
+    val accumulated: Int = 0,
+    allowPickup: Boolean = false,
+    isGhost: Boolean = false,
+    commands: List<String> = emptyList(),
+    triggers: List<Ref<TriggerableEntry>> = emptyList(),
+    modifiers: List<com.typewritermc.engine.paper.entry.Modifier> = emptyList(),
+    interactions: Map<btcrenaud.gui.api.InteractionType, btcrenaud.gui.api.GuiSlotInteraction> = emptyMap(),
+    input: btcrenaud.gui.InputData? = null,
+    storage: btcrenaud.gui.StorageSlotData? = null,
+    animation: btcrenaud.gui.api.SlotAnimation? = null,
+    cooldownTicks: Long = 0,
+    tag: String? = null
+) : GuiSlot(x, y, item, allowPickup, isGhost, commands, triggers, modifiers, interactions, input, storage, animation, cooldownTicks, tag) {
+    override fun copy(
+        x: Int,
+        y: Int,
+        item: ItemStack,
+        allowPickup: Boolean,
+        isGhost: Boolean,
+        commands: List<String>,
+        triggers: List<Ref<TriggerableEntry>>,
+        modifiers: List<com.typewritermc.engine.paper.entry.Modifier>,
+        interactions: Map<btcrenaud.gui.api.InteractionType, btcrenaud.gui.api.GuiSlotInteraction>,
+        input: btcrenaud.gui.InputData?,
+        storage: btcrenaud.gui.StorageSlotData?,
+        animation: btcrenaud.gui.api.SlotAnimation?,
+        cooldownTicks: Long,
+        tag: String?
+    ): StorageGuiSlot {
+        return StorageGuiSlot(
+            x = x, y = y, item = item,
+            entry = this.entry,
+            groupKey = this.groupKey,
+            slotIndex = this.slotIndex,
+            maxStack = this.maxStack,
+            temporary = this.temporary,
+            temporaryTriggers = this.temporaryTriggers,
+            onFill = this.onFill,
+            onEmpty = this.onEmpty,
+            placeholder = this.placeholder,
+            requiredItem = this.requiredItem,
+            requiredAmount = this.requiredAmount,
+            onReachRequired = this.onReachRequired,
+            consumeItems = this.consumeItems,
+            forceStorage = this.forceStorage,
+            accumulated = this.accumulated,
+            allowPickup = allowPickup,
+            isGhost = isGhost,
+            commands = commands,
+            triggers = triggers,
+            modifiers = modifiers,
+            interactions = interactions,
+            input = input,
+            storage = storage,
+            animation = animation,
+            cooldownTicks = cooldownTicks,
+            tag = tag
+        )
+    }
+}
 
 /**
  * A layout that renders a set of storage slots backed by a GuiStorageEntry artifact.

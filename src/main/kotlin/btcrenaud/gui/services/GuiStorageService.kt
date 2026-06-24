@@ -152,7 +152,8 @@ object GuiStorageService {
     }
 
     private fun matchesRequiredItem(slot: StorageGuiSlot, cursor: ItemStack): Boolean {
-        val required = slot.requiredItem ?: return true
+        val required = slot.requiredItem
+        if (required == null || required.type == Material.AIR) return true
         return cursor.type == required.type
     }
 
@@ -173,7 +174,7 @@ object GuiStorageService {
         val cursorRaw = player.itemOnCursor
         val cursor = if (cursorRaw.type == Material.AIR) null else cursorRaw
         val cfg = config()
-
+        
         // 1. PLACE_ONE
         if (matchesClick(cfg?.placeOneClick, clickType, StorageClickType.LEFT)) {
             val c = cursor
@@ -237,9 +238,10 @@ object GuiStorageService {
     /** Place ONE item from cursor into slot. Saves to artifact before clearing cursor. */
     private fun placeOne(player: Player, slot: StorageGuiSlot, stored: ItemStack?, cursor: ItemStack, onRerender: () -> Unit) {
         val current = stored?.amount ?: 0
-        if (current >= slot.maxStack && slot.maxStack > 0) return
+        if (current >= slot.maxStack && slot.maxStack > 0) {
+            return
+        }
         val newAmount = if (slot.forceStorage && cursor.maxStackSize <= 1) {
-            // Non-stackable item: store as single unit regardless of maxStack
             current + 1
         } else {
             current + 1

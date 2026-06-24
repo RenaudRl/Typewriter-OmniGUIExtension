@@ -300,7 +300,7 @@ open class GuiSlot(
     @Help("Optional tag for identifying special slots (e.g., dungeon buttons).")
     val tag: String? = null
 ) {
-    fun copy(
+    open fun copy(
         x: Int = this.x,
         y: Int = this.y,
         item: org.bukkit.inventory.ItemStack = this.item,

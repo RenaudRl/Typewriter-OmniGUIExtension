@@ -45,6 +45,12 @@ import org.bukkit.inventory.ItemStack
 object MenuSessionService : Listener {
     private lateinit var plugin: Plugin
 
+    private fun debugLog(message: String) {
+        if (com.typewritermc.core.entries.Query.findWhere<btcrenaud.gui.GuiConfigEntry> { true }.firstOrNull()?.debug == true) {
+            plugin.logger.info(message)
+        }
+    }
+
     /**
      * Registry for custom command handlers from external extensions.
      * Each entry maps a command prefix (e.g. "codex:nav ") to a handler function.
@@ -161,7 +167,7 @@ object MenuSessionService : Listener {
         playSound(player, definition.audio.onOpen, context())
 
         // Enable WASD/Input tracking if needed
-        plugin.logger.fine("[MenuSession] Opening menu ${definition.title} for ${player.name}")
+        debugLog("[MenuSession] Opening menu ${definition.title} for ${player.name}")
         // VehicleInputService.startTracking(player) removed
 
         if (Bukkit.isPrimaryThread()) {
@@ -198,7 +204,7 @@ object MenuSessionService : Listener {
         // Find something to scroll. Priority: targetId > focusedId > first available sub-viewport
         var idToScroll = targetId ?: session.focusedId ?: session.subViewports.keys.firstOrNull()
         
-        plugin.logger.fine("[Scroll] Attempting to scroll (dx=$deltaX, dy=$deltaY, target=$targetId, focused=${session.focusedId}, subViewports=${session.subViewports.keys})")
+        debugLog("[Scroll] Attempting to scroll (dx=$deltaX, dy=$deltaY, target=$targetId, focused=${session.focusedId}, subViewports=${session.subViewports.keys})")
         
         if (idToScroll != null && session.subViewports.containsKey(idToScroll)) {
             val subViewport = session.subViewports[idToScroll]!!
@@ -229,7 +235,7 @@ object MenuSessionService : Listener {
         // and fall through to main viewport. This avoids silently redirecting
         // scrolls from one zone to another when the target is misconfigured.
         if (targetId != null && !session.subViewports.containsKey(targetId)) {
-            plugin.logger.fine("[Scroll] Target layout '$targetId' not found in subViewports (available: ${session.subViewports.keys})")
+            debugLog("[Scroll] Target layout '$targetId' not found in subViewports (available: ${session.subViewports.keys})")
         }
 
         // Default: scroll main viewport
@@ -291,7 +297,7 @@ object MenuSessionService : Listener {
 
             // Handle Animation Interpolation
             if (virtual.animation != null && !session.animatedSlots.containsKey(baseIndex)) {
-                plugin.logger.fine("[Animation] Slot $baseIndex → (${virtual.animation.targetX}, ${virtual.animation.targetY})")
+                debugLog("[Animation] Slot $baseIndex → (${virtual.animation.targetX}, ${virtual.animation.targetY})")
                 session.animatedSlots[baseIndex] = AnimatedSlotState(
                     slot = virtual,
                     startX = virtual.x.toDouble(),
@@ -375,7 +381,21 @@ object MenuSessionService : Listener {
         
         // For externally-managed GUI types (Book, Merchant), let vanilla handle clicks.
         // The content is set by OpenGuiActionEntry, not by layout slots.
+        // However, we must cancel shift-clicks and other non-standard clicks in the top
+        // inventory to prevent breaking the trade window.
         if (session.definition.type == btcrenaud.gui.GuiType.BOOK || session.definition.type == btcrenaud.gui.GuiType.VILLAGER_TRADE) {
+            // Cancel shift-clicks, number keys, and drop actions in the top inventory
+            // to prevent items from being moved into trade slots incorrectly
+            if (event.clickedInventory == event.view.topInventory) {
+                if (event.click == org.bukkit.event.inventory.ClickType.SHIFT_LEFT ||
+                    event.click == org.bukkit.event.inventory.ClickType.SHIFT_RIGHT ||
+                    event.click == org.bukkit.event.inventory.ClickType.NUMBER_KEY ||
+                    event.click == org.bukkit.event.inventory.ClickType.DROP ||
+                    event.click == org.bukkit.event.inventory.ClickType.CONTROL_DROP) {
+                    event.isCancelled = true
+                    return
+                }
+            }
             return
         }
         
@@ -390,6 +410,13 @@ object MenuSessionService : Listener {
         }
 
         if (event.clickedInventory != event.view.topInventory) return
+
+        // For vanilla containers (Anvil, Enchanting Table, Grindstone, etc.) with no custom
+        // layout (EmptyLayout), let vanilla handle all clicks normally. The plugin only
+        // manages the session lifecycle (open/close/render) for these types.
+        if (session.definition.layout is btcrenaud.gui.api.EmptyLayout) {
+            return
+        }
 
         val relSlot = event.slot
         val slots = session.definition.layout.getSlots(session, session.viewport)
@@ -413,6 +440,8 @@ object MenuSessionService : Listener {
         // Update focus to the layout containing this slot
         updateFocus(session, session.definition.layout, virtualX, virtualY)
 
+        debugLog("[Click] Player ${player.name} clicked raw slot $relSlot (relX=$relX, relY=$relY). Virtual coords: $virtualX, $virtualY")
+
         // Storage slot check via class name to avoid NoClassDefFoundError
         // when Paper's ClassLoader cannot resolve StorageGuiSlot during event dispatch.
         val isStorageSlot = try {
@@ -421,6 +450,7 @@ object MenuSessionService : Listener {
             false
         }
         if (isStorageSlot) {
+            debugLog("[Click] Identified StorageGuiSlot! Dispatching GuiStorageService.handleClick...")
             event.isCancelled = true
             @Suppress("UNCHECKED_CAST")
             val storageSlot = clickedSlot as btcrenaud.gui.api.StorageGuiSlot
@@ -580,7 +610,7 @@ object MenuSessionService : Listener {
                 val dx = parts.getOrNull(1)?.toIntOrNull() ?: 0
                 val dy = parts.getOrNull(2)?.toIntOrNull() ?: 0
                 val targetId = parts.getOrNull(3)
-                plugin.logger.fine("[GUI] gui:scroll dx=$dx, dy=$dy, target=$targetId")
+                debugLog("[GUI] gui:scroll dx=$dx, dy=$dy, target=$targetId")
                 scroll(player, dx, dy, targetId)
             }
             // Shorthand scroll commands (legacy pages, backward compat)
@@ -852,7 +882,35 @@ object MenuSessionService : Listener {
         }
 
         // Clear inventory to prevent item drops on close
-        event.inventory.clear()
+        // Exception: Merchant/Trade GUIs — we must return input items to the player
+        // instead of clearing them, so the player doesn't lose their items.
+        val isTradeGui = session.definition.type == btcrenaud.gui.GuiType.VILLAGER_TRADE
+        if (isTradeGui) {
+            val topInventory = event.view.topInventory
+            val itemsToReturn = mutableListOf<org.bukkit.inventory.ItemStack>()
+            for (slotIndex in 0..1) {
+                val item = topInventory.getItem(slotIndex)
+                if (item != null && item.type != org.bukkit.Material.AIR) {
+                    itemsToReturn.add(item.clone())
+                }
+            }
+            // Clear the merchant inventory BEFORE vanilla processes the close
+            // This prevents vanilla from also returning the items (duplication bug)
+            for (slotIndex in 0..2) {
+                topInventory.setItem(slotIndex, null)
+            }
+            // Return items to player
+            itemsToReturn.forEach { item ->
+                val leftover = player.inventory.addItem(item)
+                if (leftover.isNotEmpty()) {
+                    leftover.values.forEach { drop ->
+                        player.world.dropItemNaturally(player.location, drop)
+                    }
+                }
+            }
+        } else {
+            event.inventory.clear()
+        }
 
         // Process temporary storage slots: clear content + fire temporaryTriggers
         processTemporaryStorageSlots(player, session)
