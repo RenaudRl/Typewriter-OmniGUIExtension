@@ -365,6 +365,7 @@ object MenuSessionService : Listener {
         // MUST call update() to actually open the inventory.
         val isExternallyManaged = session.definition.type == btcrenaud.gui.GuiType.BOOK
             || session.definition.type == btcrenaud.gui.GuiType.VILLAGER_TRADE
+            || session.definition.type == btcrenaud.gui.GuiType.MERCHANT
         val needsUpdate = session.definition.layout !is btcrenaud.gui.api.EmptyLayout || !isExternallyManaged
         if (needsUpdate) {
             GuiFactory.update(player, guiDef)
@@ -379,25 +380,17 @@ object MenuSessionService : Listener {
         val player = event.whoClicked as? Player ?: return
         val session = activeSessions[player.uniqueId] ?: return
         
-        // For externally-managed GUI types (Book, Merchant), let vanilla handle clicks.
-        // The content is set by OpenGuiActionEntry, not by layout slots.
-        // However, we must cancel shift-clicks and other non-standard clicks in the top
-        // inventory to prevent breaking the trade window.
-        if (session.definition.type == btcrenaud.gui.GuiType.BOOK || session.definition.type == btcrenaud.gui.GuiType.VILLAGER_TRADE) {
-            // Cancel shift-clicks, number keys, and drop actions in the top inventory
-            // to prevent items from being moved into trade slots incorrectly
-            if (event.clickedInventory == event.view.topInventory) {
-                if (event.click == org.bukkit.event.inventory.ClickType.SHIFT_LEFT ||
-                    event.click == org.bukkit.event.inventory.ClickType.SHIFT_RIGHT ||
-                    event.click == org.bukkit.event.inventory.ClickType.NUMBER_KEY ||
-                    event.click == org.bukkit.event.inventory.ClickType.DROP ||
-                    event.click == org.bukkit.event.inventory.ClickType.CONTROL_DROP) {
-                    event.isCancelled = true
-                    return
-                }
-            }
+        // ── Externally-managed GUIs (Book, Merchant/Trade) ────────────────────
+        // IMPORTANT: This block MUST come before the bottom-inventory check below.
+        if (session.definition.type == btcrenaud.gui.GuiType.BOOK ||
+            session.definition.type == btcrenaud.gui.GuiType.VILLAGER_TRADE ||
+            session.definition.type == btcrenaud.gui.GuiType.MERCHANT) {
+            
+            // Allow Vanilla Minecraft to natively handle all clicks (including shift-clicks)
+            // for these GUIs since they use valid Merchant objects in Paper 1.21.4.
             return
         }
+
         
         // Handle clicks in bottom inventory (Shift-Clicking or Hotbar Swapping)
         if (event.clickedInventory == event.view.bottomInventory) {
@@ -531,10 +524,16 @@ object MenuSessionService : Listener {
     @EventHandler
     fun onDrag(event: InventoryDragEvent) {
         val player = event.whoClicked as? Player ?: return
-        if (activeSessions.containsKey(player.uniqueId)) {
-            // Block all dragging in GUIs for security
-            event.isCancelled = true
+        val session = activeSessions[player.uniqueId] ?: return
+        // Merchant/Book GUIs: let vanilla handle drag (no custom layout to protect)
+        val guiType = session.definition.type
+        if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE ||
+            guiType == btcrenaud.gui.GuiType.MERCHANT ||
+            guiType == btcrenaud.gui.GuiType.BOOK) {
+            return
         }
+        // Block all dragging in custom GUIs for security
+        event.isCancelled = true
     }
 
     /**
@@ -868,23 +867,34 @@ object MenuSessionService : Listener {
             return
         }
 
-        // Book and Merchant GUIs have no persistent inventory — always clean up on close.
-        val isExternalGui = session.definition.type == btcrenaud.gui.GuiType.BOOK || session.definition.type == btcrenaud.gui.GuiType.VILLAGER_TRADE
-        
-        // If the session's currentInventory is null (meaning it's a brand new session that hasn't finished rendering)
-        // or if it's different from the inventory being closed, we keep the session alive.
-        // Exception: externally-managed GUIs (Book, Merchant) always clean up on close.
-        if (!isExternalGui && (session.currentInventory == null || event.inventory != session.currentInventory)) {
-            // Clear vanilla GUI items to prevent drops
-            event.inventory.clear()
-            // PacketScrollService.clear(player) removed
-            return
+        // Book and Merchant GUIs have no persistent inventory, but we still need to make sure
+        // we are closing the RIGHT inventory, and not a previous GUI that was just closed by Bukkit
+        // during the open() process.
+        val isTradeGui = session.definition.type == btcrenaud.gui.GuiType.VILLAGER_TRADE || session.definition.type == btcrenaud.gui.GuiType.MERCHANT
+        val isBookGui = session.definition.type == btcrenaud.gui.GuiType.BOOK
+
+        if (isTradeGui) {
+            if (event.inventory.type != org.bukkit.event.inventory.InventoryType.MERCHANT) {
+                // The inventory being closed is NOT a merchant. This is likely the previous GUI
+                // being closed by Bukkit when openMerchant() was called. Do not delete the session.
+                return
+            }
+        } else if (isBookGui) {
+            // Books don't have an inventory type that fires a reliable close event with a specific type,
+            // but we can let it pass or check if there's a better way. For now, allow it to close.
+        } else {
+            // For normal GUIs, require strict reference equality
+            if (session.currentInventory == null || event.inventory != session.currentInventory) {
+                // Clear vanilla GUI items to prevent drops
+                event.inventory.clear()
+                // PacketScrollService.clear(player) removed
+                return
+            }
         }
 
         // Clear inventory to prevent item drops on close
         // Exception: Merchant/Trade GUIs — we must return input items to the player
         // instead of clearing them, so the player doesn't lose their items.
-        val isTradeGui = session.definition.type == btcrenaud.gui.GuiType.VILLAGER_TRADE
         if (isTradeGui) {
             val topInventory = event.view.topInventory
             val itemsToReturn = mutableListOf<org.bukkit.inventory.ItemStack>()

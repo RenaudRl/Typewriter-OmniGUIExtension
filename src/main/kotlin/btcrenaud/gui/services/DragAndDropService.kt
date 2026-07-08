@@ -51,9 +51,18 @@ object DragAndDropService : Listener {
         val player = event.whoClicked as? Player ?: return
         if (!MenuSessionService.hasActiveSession(player)) return
 
+        // Merchant/Book GUIs have their own shift-click handling in MenuSessionService.onClick()
+        // They use EmptyLayout (no slots with allowPickup), so this handler would incorrectly
+        // cancel all shift-clicks before MenuSessionService can process them.
+        val session = MenuSessionService.getSession(player) ?: return
+        val guiType = session.definition.type
+        if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE ||
+            guiType == btcrenaud.gui.GuiType.MERCHANT ||
+            guiType == btcrenaud.gui.GuiType.BOOK) {
+            return
+        }
+
         if (event.isShiftClick) {
-            val session = MenuSessionService.getSession(player) ?: return
-            
             // If clicking in player inventory, it tries to move TO the GUI
             if (event.clickedInventory == event.view.bottomInventory) {
                 // Find empty slots in GUI that allow pickup
