@@ -20,9 +20,10 @@ class ReactiveSlot(
     allowPickup: Boolean = false,
     commands: List<String> = emptyList(),
     triggers: List<com.typewritermc.core.entries.Ref<com.typewritermc.engine.paper.entry.TriggerableEntry>> = emptyList(),
-    modifiers: List<com.typewritermc.engine.paper.entry.Modifier> = emptyList()
-) : GuiSlot(x = x, y = y, item = ItemStack(org.bukkit.Material.AIR), allowPickup = allowPickup, commands = commands, triggers = triggers, modifiers = modifiers) {
-    
+    modifiers: List<com.typewritermc.engine.paper.entry.Modifier> = emptyList(),
+    onClick: ((Player, InteractionType) -> Unit)? = null
+) : GuiSlot(x = x, y = y, item = ItemStack(org.bukkit.Material.AIR), allowPickup = allowPickup, commands = commands, triggers = triggers, modifiers = modifiers, onClick = onClick) {
+
     fun resolveItem(player: Player): GuiSlot {
         return copy(item = source.get(player))
     }

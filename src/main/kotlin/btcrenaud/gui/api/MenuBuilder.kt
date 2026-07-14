@@ -15,6 +15,7 @@ class MenuBuilder(val id: String) {
     private var size: InventorySize? = null
     private val staticSlots = mutableListOf<GuiSlot>()
     private val dynamicSlots = mutableListOf<GuiSlot>()
+    private val widgetSlots = mutableListOf<GuiSlot>()
     private val layouts = mutableListOf<MenuLayout>()
     private var rootLayout: MenuLayout? = null
     private var vWidth: Int = 9
@@ -45,8 +46,8 @@ class MenuBuilder(val id: String) {
         layouts.add(FrameLayout(listOf(MenuFrame(id, x, y, width, height, layout)), id))
     }
 
-    fun pagination(pages: List<List<GuiSlot>>, nextSlot: GuiSlot? = null, prevSlot: GuiSlot? = null, backSlot: GuiSlot? = null, id: String? = null) = apply {
-        layouts.add(PaginatedLayout(pages, nextSlot, prevSlot, backSlot, id))
+    fun pagination(pages: List<List<GuiSlot>>, nextSlot: GuiSlot? = null, prevSlot: GuiSlot? = null, id: String? = null) = apply {
+        layouts.add(PaginatedLayout(pages = pages, nextSlot = nextSlot, prevSlot = prevSlot, id = id))
     }
 
     fun iterator(items: List<ItemStack>, slots: List<Int>, id: String? = null, block: ((ItemStack) -> GuiSlot)? = null) = apply {
@@ -65,6 +66,12 @@ class MenuBuilder(val id: String) {
     fun layout(layout: MenuLayout) = apply {
         rootLayout = layout
     }
+
+    /**
+     * Appends a raw [GuiSlot] (including [ReactiveSlot] and widget slots) to the menu.
+     * Used by the widget builders in Widgets.kt; slots render in a static [SimpleLayout].
+     */
+    fun addSlot(slot: GuiSlot) = apply { widgetSlots.add(slot) }
 
     /**
      * Adds a group of persistent storage slots backed by a [GuiStorageEntry] artifact.
@@ -94,6 +101,9 @@ class MenuBuilder(val id: String) {
         if (dynamicSlots.isNotEmpty()) {
             children.add(ScrollableLayout(SimpleLayout(dynamicSlots)))
         }
+        if (widgetSlots.isNotEmpty()) {
+            children.add(SimpleLayout(widgetSlots))
+        }
         children.addAll(layouts)
 
         return MenuDefinition(
@@ -114,17 +124,41 @@ class GuiSlotBuilder(val x: Int, val y: Int, val item: ItemStack) {
     var triggers = mutableListOf<com.typewritermc.core.entries.Ref<com.typewritermc.engine.paper.entry.TriggerableEntry>>()
     var modifiers = mutableListOf<com.typewritermc.engine.paper.entry.Modifier>()
 
+    /** Adds a Typewriter trigger — the canonical, data-driven way to react to a click. */
+    fun trigger(ref: com.typewritermc.core.entries.Ref<com.typewritermc.engine.paper.entry.TriggerableEntry>) = apply { triggers.add(ref) }
+
+    @Deprecated(
+        "Raw command strings bypass the Typewriter entry graph (no criteria, no modifiers, no audit). " +
+            "Wire a TriggerableEntry ref instead.",
+        ReplaceWith("trigger(ref)")
+    )
     fun command(cmd: String) = apply { commands.add(cmd) }
-    
+
+    @Deprecated(
+        "Raw command strings bypass the Typewriter entry graph. Wire a TriggerableEntry ref instead.",
+        ReplaceWith("trigger(ref)")
+    )
     fun onInteraction(type: InteractionType, cmd: String) = apply {
         interactions.getOrPut(type) { mutableListOf() }.add(cmd)
     }
 
+    @Suppress("DEPRECATION")
+    @Deprecated("Wire a TriggerableEntry ref instead.", ReplaceWith("trigger(ref)"))
     fun onLeftClick(cmd: String) = onInteraction(InteractionType.LEFT_CLICK, cmd)
+    @Suppress("DEPRECATION")
+    @Deprecated("Wire a TriggerableEntry ref instead.", ReplaceWith("trigger(ref)"))
     fun onRightClick(cmd: String) = onInteraction(InteractionType.RIGHT_CLICK, cmd)
+    @Suppress("DEPRECATION")
+    @Deprecated("Wire a TriggerableEntry ref instead.", ReplaceWith("trigger(ref)"))
     fun onShiftClick(cmd: String) = onInteraction(InteractionType.SHIFT_LEFT_CLICK, cmd)
+    @Suppress("DEPRECATION")
+    @Deprecated("Wire a TriggerableEntry ref instead.", ReplaceWith("trigger(ref)"))
     fun onKeyF(cmd: String) = onInteraction(InteractionType.SWAP_OFFHAND, cmd)
+    @Suppress("DEPRECATION")
+    @Deprecated("Wire a TriggerableEntry ref instead.", ReplaceWith("trigger(ref)"))
     fun onKeyQ(cmd: String) = onInteraction(InteractionType.DROP, cmd)
+    @Suppress("DEPRECATION")
+    @Deprecated("Wire a TriggerableEntry ref instead.", ReplaceWith("trigger(ref)"))
     fun onKeyNumber(number: Int, cmd: String) = InteractionType.fromNumberKey(number-1)?.let { onInteraction(it, cmd) }
 
     fun build(): GuiSlot = GuiSlot(
@@ -163,6 +197,7 @@ class StorageLayoutBuilder(
         y: Int,
         maxStack: Int = 64,
         temporary: Boolean = false,
+        temporaryTriggers: List<Ref<TriggerableEntry>> = emptyList(),
         placeholder: ItemStack = ItemStack(Material.AIR),
         onFill: List<Ref<TriggerableEntry>> = emptyList(),
         onEmpty: List<Ref<TriggerableEntry>> = emptyList(),
@@ -170,10 +205,16 @@ class StorageLayoutBuilder(
         requiredItem: org.bukkit.inventory.ItemStack? = null,
         requiredAmount: Int = 0,
         onReachRequired: List<Ref<TriggerableEntry>> = emptyList(),
-        consumeItems: Boolean = true
+        consumeItems: Boolean = true,
+        forceStorage: Boolean = true
     ) = apply {
         if (slotIndex == nextIndex) nextIndex++
-        slots.add(StorageSlotConfig(x, y, slotIndex, maxStack, temporary, emptyList(), onFill, onEmpty, placeholder, requiredItem, requiredAmount, onReachRequired, consumeItems))
+        slots.add(StorageSlotConfig(
+            x = x, y = y, slotIndex = slotIndex, maxStack = maxStack, temporary = temporary,
+            temporaryTriggers = temporaryTriggers, onFill = onFill, onEmpty = onEmpty,
+            placeholder = placeholder, requiredItem = requiredItem, requiredAmount = requiredAmount,
+            onReachRequired = onReachRequired, consumeItems = consumeItems, forceStorage = forceStorage
+        ))
     }
 
     fun build() = StorageLayout(entry, slots.toList(), groupKeyProvider, id)

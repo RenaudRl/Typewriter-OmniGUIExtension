@@ -60,17 +60,13 @@ object TitleCompiler {
 
         if (scrollOffsetX == 0 && scrollOffsetY == 0) return rawTitle
 
-        // For horizontal scrolling: subtract from EVERY shift tag's offset.
-        // For vertical scrolling: handled by ascent values in the font provider
-        // configuration — the title bar adjusts its Y via the inventory's built-in
-        // rendering. Horizontal adjustment is the only one needed in the title.
-        // FIX 8: Use replaceAll (Kotlin Regex.replace replaces ALL matches, not just first)
+        // Shift tags are RELATIVE cursor moves, so adjusting every tag would compound
+        // the offset (element k would drift by k×offset). Prefixing a single negative
+        // shift moves the whole composition left while preserving relative positions.
+        // Vertical scrolling cannot be expressed in the title string itself — it
+        // requires per-offset ascent variants in the font providers.
         return if (scrollOffsetX != 0) {
-            SHIFT_REGEX.replace(rawTitle) { match ->
-                val currentOffset = match.groupValues[1].toIntOrNull() ?: 0
-                val adjustedOffset = currentOffset - scrollOffsetX
-                "<shift:$adjustedOffset>"
-            }
+            "<shift:${-scrollOffsetX}>$rawTitle"
         } else {
             rawTitle
         }

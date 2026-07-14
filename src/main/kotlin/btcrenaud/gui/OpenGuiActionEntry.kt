@@ -69,6 +69,10 @@ class OpenGuiActionEntry(
     val mainLayoutId: String? = null,
     @Help("Custom audio configuration for this menu (open, close, scroll, click sounds).")
     val audio: GuiAudioData = GuiAudioData(),
+    @Help("Entry id of a template menu to inherit from: its layoutPool is merged under this one (same ids override), and mainLayoutId/size are used as fallbacks.")
+    val baseMenuId: String = "",
+    @Help("Re-render the menu every N ticks while open (0 = disabled). For live counters/timers.")
+    val autoRefreshTicks: Long = 0,
 ) : ActionEntry {
     override fun ActionTrigger.execute() {
         val rawTitleString: String? = title.get(player, context)
@@ -78,13 +82,18 @@ class OpenGuiActionEntry(
         val componentTitle: Component? = rawTitleString
             ?.asMiniCE()
 
-        // Handle special vanilla types
-        // These will now be extracted from the layout pool if the main layout is specialized
-        val pool = layoutPool.filterNotNull().associateBy { it.id }
-        val mainLayout = mainLayoutId?.let { pool[it] }
+        // Template inheritance: the base menu's pool merges UNDER ours —
+        // a child layout with the same id overrides the template's version.
+        val base = baseMenuId.takeIf { it.isNotBlank() }
+            ?.let { Ref(it, OpenGuiActionEntry::class).get() }
+        val pool = ((base?.layoutPool ?: emptyList()) + layoutPool)
+            .filterNotNull()
+            .associateBy { it.id }
+        val effectiveMainLayoutId = mainLayoutId ?: base?.mainLayoutId
+        val mainLayout = effectiveMainLayoutId?.let { pool[it] }
 
         val resolvedSize = when (guiType) {
-            GuiType.CUSTOM -> size ?: InventorySize.SIZE_54 // default to 6 rows (54 slots)
+            GuiType.CUSTOM -> size ?: base?.size ?: InventorySize.SIZE_54 // default to 6 rows (54 slots)
             else -> null
         }
         val totalSize = resolvedSize?.slots ?: guiType.inventoryType?.defaultSize ?: 54
@@ -135,9 +144,18 @@ class OpenGuiActionEntry(
         }
 
         // Final layout resolution
-        val finalLayout: btcrenaud.gui.api.MenuLayout = mainLayout?.let { 
-            btcrenaud.gui.api.LayoutParser.parse(player, context, guiType, totalSize, pool, it) 
+        val finalLayout: btcrenaud.gui.api.MenuLayout = mainLayout?.let {
+            btcrenaud.gui.api.LayoutParser.parse(player, context, guiType, totalSize, pool, it)
         } ?: btcrenaud.gui.api.EmptyLayout
+
+        // Menu states (_gui_states): when present, wrap the layout so per-player
+        // conditions and LayerOverrides apply at render time.
+        val states = btcrenaud.gui.services.MenuStateService.getStates(id)
+        val statefulLayout = if (states.isEmpty()) {
+            finalLayout
+        } else {
+            btcrenaud.gui.editor.states.StateAwareLayout(id, id, states, finalLayout)
+        }
 
         val definition = btcrenaud.gui.api.MenuDefinition(
             id = id,
@@ -145,7 +163,7 @@ class OpenGuiActionEntry(
             title = componentTitle,
             rawTitle = rawTitleString,
             size = resolvedSize,
-            layout = finalLayout,
+            layout = statefulLayout,
             audio = btcrenaud.gui.api.MenuAudioConfig(
                 onOpen = audio.onOpen,
                 onClose = audio.onClose,
@@ -154,7 +172,7 @@ class OpenGuiActionEntry(
             )
         )
 
-        btcrenaud.gui.services.MenuSessionService.register(player, definition)
+        btcrenaud.gui.services.MenuSessionService.register(player, definition, autoRefreshTicks = autoRefreshTicks)
     }
 }
 
@@ -193,6 +211,10 @@ data class GuiItemData(
     val buttonType: String? = null,
     @Help("Prefix prepended to button type tag. Default: 'dungeon_button:'. Set to e.g. 'shop_button:' or 'codex_button:' for other extensions.")
     val buttonPrefix: String? = null,
+    @Help("Permission required to SEE this slot (null = everyone).")
+    val viewPermission: String? = null,
+    @Help("Permission required to INTERACT with this slot; without it the slot renders but is inert.")
+    val clickPermission: String? = null,
     @Help("Starting X position (column) of this slot. 0 = leftmost.")
     val x: Int = 0,
     @Help("Starting Y position (row) of this slot. 0 = top row.")
@@ -225,6 +247,8 @@ object GuiSlotBuilder {
         data: GuiItemData,
     ): List<btcrenaud.gui.api.GuiSlot> {
         if (!data.criteria.matches(player, context)) return emptyList()
+        if (data.viewPermission != null && !player.hasPermission(data.viewPermission)) return emptyList()
+        val canClick = data.clickPermission == null || player.hasPermission(data.clickPermission)
         
         // Handle tagged button types — build the user-configured slot with a tag so resolvers can
         // replace the interactions while preserving the configured visual (item, name, lore).
@@ -324,12 +348,12 @@ object GuiSlotBuilder {
                 x = px,
                 y = py,
                 item = stack.clone(),
-                triggers = data.triggers,
-                modifiers = data.modifiers,
-                allowPickup = data.allowPickup,
-                isGhost = data.isGhost,
-                interactions = allInteractions,
-                input = data.input,
+                triggers = if (canClick) data.triggers else emptyList(),
+                modifiers = if (canClick) data.modifiers else emptyList(),
+                allowPickup = data.allowPickup && canClick,
+                isGhost = data.isGhost && canClick,
+                interactions = if (canClick) allInteractions else emptyMap(),
+                input = if (canClick) data.input else null,
                 animation = data.animation?.let { anim ->
                     btcrenaud.gui.api.SlotAnimation(anim.targetX, anim.targetY, anim.duration, anim.easing)
                 },

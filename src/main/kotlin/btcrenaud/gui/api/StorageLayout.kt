@@ -75,7 +75,8 @@ class StorageGuiSlot(
         storage: btcrenaud.gui.StorageSlotData?,
         animation: btcrenaud.gui.api.SlotAnimation?,
         cooldownTicks: Long,
-        tag: String?
+        tag: String?,
+        onClick: ((org.bukkit.entity.Player, btcrenaud.gui.api.InteractionType) -> Unit)?
     ): StorageGuiSlot {
         return StorageGuiSlot(
             x = x, y = y, item = item,

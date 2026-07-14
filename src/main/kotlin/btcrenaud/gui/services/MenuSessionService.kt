@@ -104,9 +104,16 @@ object MenuSessionService : Listener {
         var currentInventory: org.bukkit.inventory.Inventory? = null,
         /** Flag to ignore InventoryCloseEvent during menu transitions. */
         var isTransitioning: Boolean = false,
-        /** Cooldown timestamps per slot identifier, keyed by "layoutId:slotIndex". */
-        val cooldowns: MutableMap<String, Long> = mutableMapOf()
+        /** Cooldown timestamps keyed by virtual coordinates "x:y" (stable across scrolling). */
+        val cooldowns: MutableMap<String, Long> = mutableMapOf(),
+        /** State forced via `gui:state <id>` — overrides condition evaluation until cleared. */
+        var forcedStateId: String? = null,
+        /** Periodic re-render task when the entry sets autoRefreshTicks > 0. */
+        var refreshTask: io.papermc.paper.threadedregions.scheduler.ScheduledTask? = null
     )
+
+    /** PDC marker on ghost-copied items so they can be reclaimed on close. */
+    private val GHOST_KEY = org.bukkit.NamespacedKey("omnigui", "ghost_item")
 
     data class AnimatedSlotState(
         val slot: btcrenaud.gui.api.GuiSlot,
@@ -125,23 +132,22 @@ object MenuSessionService : Listener {
     fun initialize(plugin: Plugin) {
         this.plugin = plugin
         Bukkit.getPluginManager().registerEvents(this, plugin)
-        
-        // Register packet listener for global keybinds
-        // MenuPacketListener not in BORNTOCRAFT
-        
-        // Initialize new services
-        // PacketScrollService not in BORNTOCRAFT
-        // VehicleInputService not in BORNTOCRAFT
         AnimationService.initialize(plugin)
     }
 
     fun register(
         player: Player,
         definition: MenuDefinition,
-        pushHistory: Boolean = true
+        pushHistory: Boolean = true,
+        autoRefreshTicks: Long = 0
     ) {
+        // Public veto point for third-party plugins/extensions.
+        val openEvent = btcrenaud.gui.api.GuiOpenEvent(player, definition)
+        if (!openEvent.callEvent()) return
+
         val current = activeSessions[player.uniqueId]
-        
+        current?.refreshTask?.cancel()
+
         // Close current inventory so GuiFactory.update() in render() will
         // detect a type/size mismatch and call open() with the new title.
         if (current != null) {
@@ -166,14 +172,23 @@ object MenuSessionService : Listener {
         // Play Open Sound
         playSound(player, definition.audio.onOpen, context())
 
-        // Enable WASD/Input tracking if needed
         debugLog("[MenuSession] Opening menu ${definition.title} for ${player.name}")
-        // VehicleInputService.startTracking(player) removed
 
         if (Bukkit.isPrimaryThread()) {
             render(player, session)
         } else {
             player.scheduler.run(plugin, { _ -> render(player, session) }, null)
+        }
+
+        // Live menus: periodic re-render for counters/timers without manual refresh calls.
+        if (autoRefreshTicks > 0) {
+            session.refreshTask = player.scheduler.runAtFixedRate(plugin, { task ->
+                if (activeSessions[player.uniqueId] !== session) {
+                    task.cancel()
+                } else {
+                    render(player, session)
+                }
+            }, null, autoRefreshTicks, autoRefreshTicks)
         }
     }
 
@@ -304,6 +319,9 @@ object MenuSessionService : Listener {
                     startY = virtual.y.toDouble(),
                     startTime = System.currentTimeMillis()
                 )
+                // Register with the ticker so the tween actually advances —
+                // without this the animation only progressed on incidental re-renders.
+                AnimationService.registerSession(session)
             }
             
             val (finalX, finalY) = AnimationService.getInterpolatedPosition(session, baseIndex, relX, relY)
@@ -368,9 +386,28 @@ object MenuSessionService : Listener {
             || session.definition.type == btcrenaud.gui.GuiType.MERCHANT
         val needsUpdate = session.definition.layout !is btcrenaud.gui.api.EmptyLayout || !isExternallyManaged
         if (needsUpdate) {
-            GuiFactory.update(player, guiDef)
-            session.currentInventory = player.openInventory.topInventory
-            session.lastSlots = physicalSlots.mapValues { it.value.first.item }
+            val newItems = guiDef.slots.associate { (it.y * 9 + it.x) to it.item }
+            val top = player.openInventory.topInventory
+            val sameInventory = session.currentInventory != null &&
+                session.currentInventory === top &&
+                (top.type == session.definition.type.inventoryType ||
+                    (session.definition.type == btcrenaud.gui.GuiType.CUSTOM &&
+                        top.size == (session.definition.size?.slots ?: 54)))
+
+            if (sameInventory) {
+                // Differential repaint: only touch slots whose item actually changed.
+                for (index in (session.lastSlots.keys + newItems.keys)) {
+                    val newItem = newItems[index]
+                    if (newItem != session.lastSlots[index]) {
+                        top.setItem(index, newItem)
+                    }
+                }
+                player.updateInventory()
+            } else {
+                GuiFactory.update(player, guiDef)
+                session.currentInventory = player.openInventory.topInventory
+            }
+            session.lastSlots = newItems
         }
         session.isTransitioning = false // Transition complete
     }
@@ -454,7 +491,13 @@ object MenuSessionService : Listener {
         // Ghost Mode handling
         if (clickedSlot?.isGhost == true) {
             event.isCancelled = true
-            player.setItemOnCursor(clickedSlot.item.clone())
+            // The copy is PDC-tagged so it can never leave the session:
+            // the cursor is wiped on close/quit if it still carries the tag.
+            val ghost = clickedSlot.item.clone()
+            ghost.editMeta { meta ->
+                meta.persistentDataContainer.set(GHOST_KEY, org.bukkit.persistence.PersistentDataType.BYTE, 1)
+            }
+            player.setItemOnCursor(ghost)
             return
         }
 
@@ -469,8 +512,16 @@ object MenuSessionService : Listener {
         }
 
         if (interaction != null) {
-            // Cooldown check
-            val cooldownKey = relSlot.toString()
+            // Public veto point before any processing.
+            val clickEvent = btcrenaud.gui.api.GuiClickEvent(player, session.definition, clickedSlot, interaction)
+            if (!clickEvent.callEvent()) {
+                event.isCancelled = true
+                return
+            }
+
+            // Cooldown check — keyed by VIRTUAL coordinates so the cooldown follows
+            // the button, not the physical screen position (stable across scrolling).
+            val cooldownKey = "$virtualX:$virtualY"
             val cooldownTicks = clickedSlot?.cooldownTicks ?: 0L
             if (cooldownTicks > 0) {
                 val lastClick = session.cooldowns[cooldownKey]
@@ -489,22 +540,35 @@ object MenuSessionService : Listener {
                 return
             }
 
-            // 1. Check Slot Interactions
-            val specificCommands = clickedSlot?.interactions?.get(interaction)
+            // 1. Interaction-specific bindings (exact click type match)
+            val specificInteraction = clickedSlot?.interactions?.get(interaction)
 
-            // 2. Check Global Interactions
-            val globalInteraction: btcrenaud.gui.api.GuiSlotInteraction? = null // globalInteractions not in BORNTOCRAFT
+            // 2. Fallback: the slot's plain `commands`/`triggers` fire on primary clicks
+            //    when no specific interaction is bound (navigation buttons, sliders…).
+            val isPrimaryClick = interaction == InteractionType.LEFT_CLICK || interaction == InteractionType.RIGHT_CLICK
 
-            // 3. Fallback to slot-level commands (for navigation buttons added by LayoutParser,
-            //    which put commands on GuiSlot.commands rather than GuiSlot.interactions)
-            val fallbackCommands: List<String> = if (interaction == InteractionType.LEFT_CLICK || interaction == InteractionType.RIGHT_CLICK) {
-                clickedSlot?.commands ?: emptyList()
-            } else emptyList()
+            val commandsToRun: List<String> = when {
+                specificInteraction != null -> specificInteraction.commands
+                isPrimaryClick -> clickedSlot?.commands ?: emptyList()
+                else -> emptyList()
+            }
+            val triggersToFire = buildList {
+                specificInteraction?.triggers?.let(::addAll)
+                if (specificInteraction != null || isPrimaryClick) {
+                    clickedSlot?.triggers?.let(::addAll)
+                }
+            }
 
-            val commandsToRun: List<String> = specificCommands?.commands ?: globalInteraction?.commands ?: fallbackCommands
+            // Programmatic widget callback (toggle/tabs built via the Kotlin DSL).
+            val callback = clickedSlot?.onClick
+            val callbackFired = callback != null && (specificInteraction != null || isPrimaryClick)
+            if (callbackFired) {
+                callback!!(player, interaction)
+                // Repaint so reactive widgets (toggle/tabs) reflect their new state.
+                refresh(player)
+            }
 
-            if (commandsToRun.isNotEmpty()) {
-                // Execute ALL commands
+            if (commandsToRun.isNotEmpty() || triggersToFire.isNotEmpty()) {
                 commandsToRun.forEach { cmd ->
                     if (cmd.startsWith("gui:")) {
                         handleInternalCommand(player, session, cmd, clickedSlot, context())
@@ -514,8 +578,21 @@ object MenuSessionService : Listener {
                         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.replace("%player%", player.name))
                     }
                 }
-                
-                // Play Click Sound
+
+                if (triggersToFire.isNotEmpty()) {
+                    triggersToFire.triggerEntriesFor(player, context())
+                }
+            }
+
+            // Apply slot fact modifiers (same mechanism as ActionEntry.applyModifiers).
+            val modifiersToApply = clickedSlot?.modifiers.orEmpty()
+            if (modifiersToApply.isNotEmpty() && (specificInteraction != null || isPrimaryClick)) {
+                val factDatabase: FactDatabase = get(FactDatabase::class.java)
+                factDatabase.modify(player, modifiersToApply, context())
+            }
+
+            // Single click-sound regardless of how many mechanisms fired.
+            if (callbackFired || commandsToRun.isNotEmpty() || triggersToFire.isNotEmpty() || modifiersToApply.isNotEmpty()) {
                 playSound(player, session.definition.audio.onClick, context())
             }
         }
@@ -598,7 +675,9 @@ object MenuSessionService : Listener {
         when (layout) {
             is CompositeLayout -> layout.children.forEach { updateFocus(session, it, x, y, layoutX, layoutY) }
             is ScrollableLayout -> updateFocus(session, layout.layout, x, y, layoutX, layoutY)
-            else -> {}
+            // Wrapper layouts (button resolvers, state-aware…) expose innerLayout —
+            // mirror findLayoutById so focus tracking reaches nested scrollables.
+            else -> layout.innerLayout?.let { updateFocus(session, it, x, y, layoutX, layoutY) }
         }
     }
 
@@ -653,6 +732,29 @@ object MenuSessionService : Listener {
             cmd.startsWith("gui:input") -> {
                 val inputData = slot?.input ?: return
                 showInputDialog(player, session, inputData)
+            }
+            cmd == "gui:refresh" -> {
+                render(player, session)
+            }
+            cmd.startsWith("gui:state") -> {
+                // "gui:state <id>" forces a state; "gui:state" alone clears the override.
+                val stateId = cmd.substringAfter("gui:state").trim().ifEmpty { null }
+                session.forcedStateId = stateId
+                render(player, session)
+            }
+            cmd.startsWith("gui:sound ") -> {
+                val key = cmd.substringAfter(" ").trim()
+                runCatching {
+                    val sound = net.kyori.adventure.sound.Sound.sound(
+                        net.kyori.adventure.key.Key.key(key),
+                        net.kyori.adventure.sound.Sound.Source.MASTER,
+                        1f,
+                        1f
+                    )
+                    player.playSound(sound)
+                }.onFailure {
+                    plugin.logger.warning("[GUI] gui:sound — invalid sound key '$key'")
+                }
             }
             cmd.startsWith("gui:open ") || cmd.startsWith("gui:action ") -> {
                 val actionId = cmd.substringAfter(" ").trim()
@@ -896,28 +998,7 @@ object MenuSessionService : Listener {
         // Exception: Merchant/Trade GUIs — we must return input items to the player
         // instead of clearing them, so the player doesn't lose their items.
         if (isTradeGui) {
-            val topInventory = event.view.topInventory
-            val itemsToReturn = mutableListOf<org.bukkit.inventory.ItemStack>()
-            for (slotIndex in 0..1) {
-                val item = topInventory.getItem(slotIndex)
-                if (item != null && item.type != org.bukkit.Material.AIR) {
-                    itemsToReturn.add(item.clone())
-                }
-            }
-            // Clear the merchant inventory BEFORE vanilla processes the close
-            // This prevents vanilla from also returning the items (duplication bug)
-            for (slotIndex in 0..2) {
-                topInventory.setItem(slotIndex, null)
-            }
-            // Return items to player
-            itemsToReturn.forEach { item ->
-                val leftover = player.inventory.addItem(item)
-                if (leftover.isNotEmpty()) {
-                    leftover.values.forEach { drop ->
-                        player.world.dropItemNaturally(player.location, drop)
-                    }
-                }
-            }
+            returnMerchantInputs(player, event.view.topInventory)
         } else {
             event.inventory.clear()
         }
@@ -926,29 +1007,72 @@ object MenuSessionService : Listener {
         processTemporaryStorageSlots(player, session)
 
         activeSessions.remove(player.uniqueId)
+        session.refreshTask?.cancel()
 
+        clearGhostCursor(player)
         playSound(player, session.definition.audio.onClose, context())
+        btcrenaud.gui.api.GuiCloseEvent(player, session.definition).callEvent()
+    }
 
-        // Stop tracking inputs (Unmount)
-        // VehicleInputService.stopTracking(player) removed
-        // PacketScrollService.clear(player) removed
+    /**
+     * Returns the trade input items (slots 0-1) to the player and clears the
+     * merchant inventory BEFORE vanilla processes the close — otherwise vanilla
+     * would return them a second time (duplication bug).
+     */
+    private fun returnMerchantInputs(player: Player, topInventory: org.bukkit.inventory.Inventory) {
+        if (topInventory.type != org.bukkit.event.inventory.InventoryType.MERCHANT) return
+        val itemsToReturn = mutableListOf<org.bukkit.inventory.ItemStack>()
+        for (slotIndex in 0..1) {
+            val item = topInventory.getItem(slotIndex)
+            if (item != null && item.type != org.bukkit.Material.AIR) {
+                itemsToReturn.add(item.clone())
+            }
+        }
+        for (slotIndex in 0..2) {
+            topInventory.setItem(slotIndex, null)
+        }
+        itemsToReturn.forEach { item ->
+            val leftover = player.inventory.addItem(item)
+            if (leftover.isNotEmpty()) {
+                leftover.values.forEach { drop ->
+                    player.world.dropItemNaturally(player.location, drop)
+                }
+            }
+        }
+    }
+
+    /** Wipes the cursor if it still holds a PDC-tagged ghost copy. */
+    private fun clearGhostCursor(player: Player) {
+        val cursor = player.itemOnCursor
+        if (!cursor.isEmpty && cursor.hasItemMeta() &&
+            cursor.itemMeta.persistentDataContainer.has(GHOST_KEY, org.bukkit.persistence.PersistentDataType.BYTE)
+        ) {
+            player.setItemOnCursor(null)
+        }
     }
 
     @EventHandler
     fun onQuit(event: PlayerQuitEvent) {
-        activeSessions.remove(event.player.uniqueId)
+        val session = activeSessions.remove(event.player.uniqueId) ?: return
+        session.refreshTask?.cancel()
+
+        // Mirror onClose safeguards for disconnects mid-session.
+        val guiType = session.definition.type
+        if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE || guiType == btcrenaud.gui.GuiType.MERCHANT) {
+            returnMerchantInputs(event.player, event.player.openInventory.topInventory)
+        }
+        clearGhostCursor(event.player)
+        btcrenaud.gui.api.GuiCloseEvent(event.player, session.definition).callEvent()
     }
 
     fun shutdown() {
+        activeSessions.values.forEach { it.refreshTask?.cancel() }
         activeSessions.keys.forEach { uuid ->
             val player = Bukkit.getPlayer(uuid)
             if (player != null) safeCloseInventory(player)
         }
         activeSessions.clear()
         org.bukkit.event.HandlerList.unregisterAll(this)
-
-        // PacketScrollService.shutdown() removed
-        // VehicleInputService.shutdown() removed
         AnimationService.shutdown()
     }
 

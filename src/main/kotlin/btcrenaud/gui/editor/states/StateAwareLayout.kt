@@ -27,8 +27,13 @@ class StateAwareLayout(
     override val virtualWidth: Int get() = baseLayout.virtualWidth
     override val virtualHeight: Int get() = baseLayout.virtualHeight
 
+    /** Expose the wrapped layout so focus/scroll resolution traverses this wrapper. */
+    override val innerLayout: MenuLayout get() = baseLayout
+
     override fun getSlots(session: MenuSessionService.ActiveSession, viewport: Viewport): List<GuiSlot> {
-        val activeState = evaluator.resolveActiveState(states, session.player, entryId)
+        // `gui:state <id>` forces a state for the session, bypassing conditions.
+        val activeState = session.forcedStateId?.let { states[it] }
+            ?: evaluator.resolveActiveState(states, session.player, entryId)
         val activeSubStates = activeState?.let {
             evaluator.resolveActiveSubStates(it, session.player, entryId)
         } ?: emptyList()

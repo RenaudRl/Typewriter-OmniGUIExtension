@@ -253,7 +253,7 @@ class IteratorLayout<T>(
     }
     
     override val virtualWidth: Int get() = 9
-    override val virtualHeight: Int get() = ((items.toList().size + 8) / 9)
+    override val virtualHeight: Int get() = ((items.count() + 8) / 9)
 }
 
 data class Viewport(
@@ -298,7 +298,13 @@ open class GuiSlot(
     @Help("Cooldown in ticks before this slot can be interacted with again.")
     val cooldownTicks: Long = 0,
     @Help("Optional tag for identifying special slots (e.g., dungeon buttons).")
-    val tag: String? = null
+    val tag: String? = null,
+    /**
+     * Programmatic click callback for widgets built via the Kotlin DSL (toggle,
+     * tabs...). Not serialized; fires in addition to commands/triggers on any click.
+     */
+    @Transient
+    val onClick: ((org.bukkit.entity.Player, InteractionType) -> Unit)? = null
 ) {
     open fun copy(
         x: Int = this.x,
@@ -314,8 +320,9 @@ open class GuiSlot(
         storage: StorageSlotData? = this.storage,
         animation: SlotAnimation? = this.animation,
         cooldownTicks: Long = this.cooldownTicks,
-        tag: String? = this.tag
-    ) = GuiSlot(x, y, item, allowPickup, isGhost, commands, triggers, modifiers, interactions, input, storage, animation, cooldownTicks, tag)
+        tag: String? = this.tag,
+        onClick: ((org.bukkit.entity.Player, InteractionType) -> Unit)? = this.onClick
+    ) = GuiSlot(x, y, item, allowPickup, isGhost, commands, triggers, modifiers, interactions, input, storage, animation, cooldownTicks, tag, onClick)
 }
 
 data class SlotAnimation(

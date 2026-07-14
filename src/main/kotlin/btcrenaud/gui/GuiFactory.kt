@@ -65,10 +65,64 @@ object GuiFactory {
     fun update(player: Player, definition: GuiDefinition) {
         val top = player.openInventory.topInventory
         if (top.type == definition.type.inventoryType || (definition.type == GuiType.CUSTOM && top.size == definition.size?.slots)) {
-            applySlots(top, definition)
+            applySlotsDiff(top, definition)
+            applyTitle(player, definition)
             player.updateInventory()
         } else {
             open(player, definition)
+        }
+    }
+
+    /**
+     * Live title update on an already-open view. Reactive/scrolled menus recompile
+     * their title (viewport shift tags, placeholders) on every render; without this
+     * the client keeps the stale title until the inventory is reopened.
+     */
+    private fun applyTitle(player: Player, definition: GuiDefinition) {
+        val title = definition.title ?: return
+        runCatching {
+            val view = player.openInventory
+            val serialized = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(title)
+            if (view.title != serialized) {
+                view.setTitle(serialized)
+            }
+        }
+        // Views without a mutable title (e.g. player inventory) throw — ignore.
+    }
+
+    /**
+     * Applies only the slots whose content actually changed. A full clear() + rewrite
+     * forces the client to redraw every stack and produces a visible flicker on
+     * fast-refreshing reactive menus. Non-grid containers keep the legacy full apply.
+     */
+    private fun applySlotsDiff(inventory: Inventory, definition: GuiDefinition) {
+        val isSimpleGrid = when (inventory.type) {
+            InventoryType.CHEST, InventoryType.BARREL, InventoryType.SHULKER_BOX,
+            InventoryType.HOPPER, InventoryType.DISPENSER, InventoryType.DROPPER -> true
+            else -> definition.type == GuiType.CUSTOM
+        }
+        if (!isSimpleGrid) {
+            applySlots(inventory, definition)
+            return
+        }
+
+        val target = arrayOfNulls<ItemStack>(inventory.size)
+        definition.slots.forEach { slot ->
+            val index = slot.y * 9 + slot.x
+            if (index in 0 until inventory.size) target[index] = slot.item
+        }
+
+        for (index in 0 until inventory.size) {
+            val current = inventory.getItem(index)
+            val wanted = target[index]
+            val unchanged = when {
+                current == null && wanted == null -> true
+                current == null || wanted == null -> false
+                else -> current == wanted
+            }
+            if (!unchanged) {
+                inventory.setItem(index, wanted)
+            }
         }
     }
 

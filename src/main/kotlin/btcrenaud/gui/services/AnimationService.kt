@@ -25,8 +25,8 @@ object AnimationService {
 
     fun initialize(plugin: Plugin) {
         this.plugin = plugin
-        // Run at 20 ticks per second for inventory updates
-        Bukkit.getScheduler().runTaskTimer(plugin, Runnable { tick() }, 1L, 1L)
+        // Global region scheduler: Folia-safe (the legacy BukkitScheduler throws on Folia).
+        Bukkit.getGlobalRegionScheduler().runAtFixedRate(plugin, { _ -> tick() }, 1L, 1L)
     }
 
     fun shutdown() {
