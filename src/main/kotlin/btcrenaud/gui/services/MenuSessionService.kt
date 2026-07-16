@@ -141,6 +141,21 @@ object MenuSessionService : Listener {
         pushHistory: Boolean = true,
         autoRefreshTicks: Long = 0
     ) {
+        // GuiOpenEvent and inventory operations must run on the player's thread.
+        // Typewriter action handlers run async, so hop onto the entity scheduler first.
+        if (!Bukkit.isPrimaryThread()) {
+            player.scheduler.run(plugin, { _ -> registerNow(player, definition, pushHistory, autoRefreshTicks) }, null)
+            return
+        }
+        registerNow(player, definition, pushHistory, autoRefreshTicks)
+    }
+
+    private fun registerNow(
+        player: Player,
+        definition: MenuDefinition,
+        pushHistory: Boolean,
+        autoRefreshTicks: Long
+    ) {
         // Public veto point for third-party plugins/extensions.
         val openEvent = btcrenaud.gui.api.GuiOpenEvent(player, definition)
         if (!openEvent.callEvent()) return
