@@ -1000,11 +1000,17 @@ object MenuSessionService : Listener {
             // Books don't have an inventory type that fires a reliable close event with a specific type,
             // but we can let it pass or check if there's a better way. For now, allow it to close.
         } else {
-            // For normal GUIs, require strict reference equality
+            // For normal GUIs, require strict reference equality.
             if (session.currentInventory == null || event.inventory != session.currentInventory) {
-                // Clear vanilla GUI items to prevent drops
-                event.inventory.clear()
-                // PacketScrollService.clear(player) removed
+                // The closed inventory is NOT the one this session owns: either our GUI is
+                // already gone (its reference was captured before an async reopen) or the
+                // player is closing a REAL container while this session lingered.
+                //
+                // NEVER clear it — clearing a mismatched inventory here was wiping player
+                // chests. Drop the now-defunct session so it can no longer hijack later
+                // clicks or auto-refresh renders into a real container.
+                activeSessions.remove(player.uniqueId)
+                session.refreshTask?.cancel()
                 return
             }
         }
