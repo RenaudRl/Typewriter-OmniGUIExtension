@@ -252,7 +252,9 @@ object GuiSlotBuilder {
         
         // Handle tagged button types — build the user-configured slot with a tag so resolvers can
         // replace the interactions while preserving the configured visual (item, name, lore).
-        val effectiveButtonType = data.buttonType
+        // An empty string is NOT a button type: decorative items serialize buttonType as "" and must
+        // fall through to the normal (repeatable) path — otherwise they collapse to a single slot.
+        val effectiveButtonType = data.buttonType?.takeIf { it.isNotEmpty() }
         if (effectiveButtonType != null) {
             // Build the actual item from user configuration instead of STRUCTURE_VOID placeholder
             val resolved = data.item.get(player, context)
@@ -264,9 +266,9 @@ object GuiSlotBuilder {
             val meta = stack.itemMeta
             if (meta != null) {
                 data.displayName?.get(player, context)?.let {
-                    meta.displayName(it.parsePlaceholders(player).asMiniCE())
+                    meta.displayName(it.parsePlaceholders(player).asMiniItem())
                 }
-                data.lore.map { it.get(player, context).parsePlaceholders(player).asMiniCE() }
+                data.lore.map { it.get(player, context).parsePlaceholders(player).asMiniItem() }
                     .takeIf { it.isNotEmpty() }
                     ?.let { meta.lore(it) }
                 stack.itemMeta = meta
@@ -292,9 +294,9 @@ object GuiSlotBuilder {
         val meta = stack.itemMeta
         if (meta != null) {
             data.displayName?.get(player, context)?.let {
-                meta.displayName(it.parsePlaceholders(player).asMiniCE())
+                meta.displayName(it.parsePlaceholders(player).asMiniItem())
             }
-            data.lore.map { it.get(player, context).parsePlaceholders(player).asMiniCE() }
+            data.lore.map { it.get(player, context).parsePlaceholders(player).asMiniItem() }
                 .takeIf { it.isNotEmpty() }
                 ?.let { meta.lore(it) }
             stack.itemMeta = meta
@@ -316,8 +318,10 @@ object GuiSlotBuilder {
             // No direction = single position at (x, y), no repetition
             positions.add(data.x to data.y)
         } else {
-            for (ry in 0 until data.repeatY) {
-                for (rc in 0 until data.count) {
+            // Coerce to at least 1: the editor serializes an un-set repeatY/count as 0, and
+            // `0 until 0` would silently drop the item. Mirrors expandMarkerPositions().
+            for (ry in 0 until data.repeatY.coerceAtLeast(1)) {
+                for (rc in 0 until data.count.coerceAtLeast(1)) {
                     val px: Int
                     val py: Int
                     when (direction) {
@@ -763,3 +767,11 @@ private fun String.asMiniCE(): net.kyori.adventure.text.Component {
     val resolvers = CraftEngineResolvers.get()
     return if (resolvers.isNotEmpty()) asMiniWithResolvers(*resolvers) else asMini()
 }
+
+/**
+ * Item name / lore variant of [asMiniCE]. Minecraft forces custom item text to italic by
+ * default; here we render it upright by default so menus look clean. Authors who *want*
+ * italic simply add the `<italic>` MiniMessage tag, which wins over this root default.
+ */
+private fun String.asMiniItem(): net.kyori.adventure.text.Component =
+    asMiniCE().decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false)
