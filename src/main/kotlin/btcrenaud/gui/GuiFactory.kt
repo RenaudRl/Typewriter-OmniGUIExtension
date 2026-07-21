@@ -26,7 +26,27 @@ import org.bukkit.event.inventory.InventoryType
  */
 object GuiFactory {
 
-    fun open(player: Player, definition: GuiDefinition) {
+    /**
+     * Views we opened that cannot carry a [GuiInventoryHolder] — the typed vanilla views
+     * (anvil, enchanting table...) come from Paper's openXxx methods with a fixed holder.
+     * Weak so entries vanish with the inventory; synchronized for Folia region threads.
+     */
+    private val ownedViews: MutableSet<Inventory> =
+        java.util.Collections.synchronizedSet(
+            java.util.Collections.newSetFromMap(java.util.WeakHashMap())
+        )
+
+    /** True when [inventory] was created/opened by this factory (menu, not a real container). */
+    fun isOwned(inventory: Inventory?): Boolean =
+        inventory != null && (GuiInventoryHolder.owns(inventory) || inventory in ownedViews)
+
+    /**
+     * Opens the GUI on the player's scheduler. [onOpened] fires once the window actually
+     * exists (possibly a tick later), with the new top inventory — sessions use it to adopt
+     * the inventory only after the swap, because the swap's InventoryCloseEvent for the
+     * previous menu arrives BEFORE the open completes.
+     */
+    fun open(player: Player, definition: GuiDefinition, onOpened: ((Inventory) -> Unit)? = null) {
         val plugin: Plugin = Bukkit.getPluginManager().getPlugin("Typewriter") ?: return
         val action = Runnable {
             when (definition.type) {
@@ -35,6 +55,7 @@ object GuiFactory {
                 GuiType.CUSTOM -> openSized(player, definition)
                 else -> openTyped(player, definition)
             }
+            onOpened?.invoke(player.openInventory.topInventory)
         }
         player.scheduler.run(plugin, { _ -> action.run() }, null)
     }
@@ -59,17 +80,27 @@ object GuiFactory {
         if (definition.villagerTrades.isNotEmpty()) {
             merchant.recipes = definition.villagerTrades.map { MerchantRecipe(it) }
         }
-        player.openMerchantView(merchant, definition.title)
+        val view = player.openMerchantView(merchant, definition.title)
+        // Merchant views can't carry our holder — register so isOwned() knows them.
+        view?.topInventory?.let { ownedViews.add(it) }
     }
 
-    fun update(player: Player, definition: GuiDefinition) {
+    fun update(player: Player, definition: GuiDefinition, onOpened: ((Inventory) -> Unit)? = null) {
         val top = player.openInventory.topInventory
-        if (top.type == definition.type.inventoryType || (definition.type == GuiType.CUSTOM && top.size == definition.size?.slots)) {
+        // In-place repaint is only allowed on an inventory WE created. Menu transitions no
+        // longer close the previous view first (that close/reopen was the visible flicker),
+        // so without this guard a matching REAL container (chest, anvil...) open at this
+        // moment would get menu items painted straight into it.
+        val ownsTop = isOwned(top)
+        val matches = top.type == definition.type.inventoryType ||
+            (definition.type == GuiType.CUSTOM && top.size == definition.size?.slots)
+        if (ownsTop && matches) {
             applySlotsDiff(top, definition)
             applyTitle(player, definition)
             player.updateInventory()
+            onOpened?.invoke(top)
         } else {
-            open(player, definition)
+            open(player, definition, onOpened)
         }
     }
 
@@ -144,6 +175,9 @@ object GuiFactory {
         val inventory: Inventory = view?.topInventory
             ?: createOwned { holder -> Bukkit.createInventory(holder, type, title) }
                 .also { player.openInventory(it) }
+
+        // Compat-opened views can't carry our holder — register them so isOwned() knows them.
+        ownedViews.add(inventory)
 
         applySlots(inventory, definition)
         player.updateInventory()
@@ -405,7 +439,7 @@ private fun Player.openStonecutterCompat(location: Location?): InventoryView? = 
     openStonecutterCompat(location)
 }
 
-private fun Player.openMerchantView(merchant: Merchant, title: net.kyori.adventure.text.Component?) {
+private fun Player.openMerchantView(merchant: Merchant, title: net.kyori.adventure.text.Component?): InventoryView? {
     val builder = MenuType.MERCHANT.builder()
         .merchant(merchant)
         .checkReachable(false)
@@ -414,5 +448,6 @@ private fun Player.openMerchantView(merchant: Merchant, title: net.kyori.adventu
     }
     val view = builder.build(this)
     openInventory(view)
+    return view
 }
 

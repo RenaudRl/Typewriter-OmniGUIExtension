@@ -172,12 +172,19 @@ object MenuSessionService : Listener {
         val current = activeSessions[player.uniqueId]
         current?.refreshTask?.cancel()
 
-        // Close current inventory so GuiFactory.update() in render() will
-        // detect a type/size mismatch and call open() with the new title.
+        // Seamless transition: never close the current inventory here. Closing first is what
+        // caused the visible flicker between menus — the client saw a close, an empty tick,
+        // then a reopen. Instead, same-size menus are repainted in place by GuiFactory.update()
+        // (diff + live title via view.setTitle), and different sizes are swapped by
+        // openInventory() in a single window change.
         if (current != null) {
-            safeCloseInventory(player)
+            // The outgoing menu still gets its lifecycle: temporary storage slots are flushed
+            // and GuiCloseEvent fires. Its close sound is skipped on purpose — the incoming
+            // menu's open sound covers the transition.
+            processTemporaryStorageSlots(player, current)
+            btcrenaud.gui.api.GuiCloseEvent(player, current.definition).callEvent()
         }
-        
+
         val rows = (definition.size?.slots ?: 54) / 9
         val session = ActiveSession(player, definition, Viewport(width = 9, height = rows))
         session.isTransitioning = true // Flag to ignore close events during this transition
@@ -427,13 +434,24 @@ object MenuSessionService : Listener {
                     }
                 }
                 player.updateInventory()
+                session.isTransitioning = false
             } else {
-                GuiFactory.update(player, guiDef)
-                session.currentInventory = player.openInventory.topInventory
+                // Adopt the inventory only once the window actually exists. A size/type change
+                // schedules a reopen on the player scheduler (next tick); the swap fires the
+                // previous menu's InventoryCloseEvent BEFORE the open completes, so the session
+                // must stay transitioning until then — adopting the old top inventory here made
+                // onClose treat that swap-close as a real close and kill the fresh session.
+                GuiFactory.update(player, guiDef) { inventory ->
+                    if (activeSessions[player.uniqueId] === session) {
+                        session.currentInventory = inventory
+                        session.isTransitioning = false
+                    }
+                }
             }
             session.lastSlots = newItems
+        } else {
+            session.isTransitioning = false // Nothing to open (Book/Merchant handle their own view)
         }
-        session.isTransitioning = false // Transition complete
     }
 
     @EventHandler
