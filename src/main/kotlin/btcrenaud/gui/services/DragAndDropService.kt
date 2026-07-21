@@ -22,10 +22,16 @@ object DragAndDropService : Listener {
     @EventHandler
     fun onDrag(event: InventoryDragEvent) {
         val player = event.whoClicked as? Player ?: return
-        if (!MenuSessionService.hasActiveSession(player)) return
 
         // By default, cancel drag if it affects the top inventory and slots are not allowPickup
-        val session = MenuSessionService.getSession(player) ?: return
+        val session = MenuSessionService.getSession(player)
+        if (session == null) {
+            // Fail closed: a menu whose session was dropped is still a menu, not a chest.
+            if (btcrenaud.gui.GuiInventoryHolder.owns(event.view.topInventory)) {
+                event.isCancelled = true
+            }
+            return
+        }
         val slots = session.definition.layout.getSlots(session, session.viewport)
 
         for (rawSlot in event.rawSlots) {
@@ -49,12 +55,18 @@ object DragAndDropService : Listener {
     @EventHandler(ignoreCancelled = true)
     fun onMove(event: InventoryClickEvent) {
         val player = event.whoClicked as? Player ?: return
-        if (!MenuSessionService.hasActiveSession(player)) return
 
         // Merchant/Book GUIs have their own shift-click handling in MenuSessionService.onClick()
         // They use EmptyLayout (no slots with allowPickup), so this handler would incorrectly
         // cancel all shift-clicks before MenuSessionService can process them.
-        val session = MenuSessionService.getSession(player) ?: return
+        val session = MenuSessionService.getSession(player)
+        if (session == null) {
+            // Fail closed: block shift-moves into/out of a menu that lost its session.
+            if (btcrenaud.gui.GuiInventoryHolder.owns(event.view.topInventory)) {
+                event.isCancelled = true
+            }
+            return
+        }
         val guiType = session.definition.type
         if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE ||
             guiType == btcrenaud.gui.GuiType.MERCHANT ||

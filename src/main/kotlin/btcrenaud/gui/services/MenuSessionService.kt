@@ -430,8 +430,18 @@ object MenuSessionService : Listener {
     @EventHandler
     fun onClick(event: InventoryClickEvent) {
         val player = event.whoClicked as? Player ?: return
-        val session = activeSessions[player.uniqueId] ?: return
-        
+        val session = activeSessions[player.uniqueId]
+        if (session == null) {
+            // No session, but the open inventory is still one of ours: the session was dropped
+            // while its menu stayed on screen (async reopen race, stale-session cleanup...).
+            // Lock it down instead of failing open — otherwise the menu degrades into a plain
+            // editable container and its items can be carried off into the player's inventory.
+            if (btcrenaud.gui.GuiInventoryHolder.owns(event.view.topInventory)) {
+                event.isCancelled = true
+            }
+            return
+        }
+
         // ── Externally-managed GUIs (Book, Merchant/Trade) ────────────────────
         // IMPORTANT: This block MUST come before the bottom-inventory check below.
         if (session.definition.type == btcrenaud.gui.GuiType.BOOK ||
@@ -616,7 +626,14 @@ object MenuSessionService : Listener {
     @EventHandler
     fun onDrag(event: InventoryDragEvent) {
         val player = event.whoClicked as? Player ?: return
-        val session = activeSessions[player.uniqueId] ?: return
+        val session = activeSessions[player.uniqueId]
+        if (session == null) {
+            // Same fail-closed guard as onClick: a menu without a session is still a menu.
+            if (btcrenaud.gui.GuiInventoryHolder.owns(event.view.topInventory)) {
+                event.isCancelled = true
+            }
+            return
+        }
         // Merchant/Book GUIs: let vanilla handle drag (no custom layout to protect)
         val guiType = session.definition.type
         if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE ||
@@ -890,24 +907,26 @@ object MenuSessionService : Listener {
         player: Player,
         title: Component,
         body: Component,
+        confirmLabel: Component = Component.text("Confirm"),
+        cancelLabel: Component = Component.text("Cancel"),
         onConfirm: () -> Unit,
         onCancel: () -> Unit = {}
     ) {
         val dialog = Dialog.create { builder ->
             val instances = DialogInstancesProvider.instance()
-            
+
             val base = DialogBase.builder(title)
                 .body(listOf(instances.plainMessageDialogBody(body)))
                 .canCloseWithEscape(true)
                 .build()
 
-            val confirmAction = ActionButton.builder(Component.text("Confirmer").color(net.kyori.adventure.text.format.NamedTextColor.GREEN))
+            val confirmAction = ActionButton.builder(confirmLabel.color(net.kyori.adventure.text.format.NamedTextColor.GREEN))
                 .action(instances.register({ _, _ ->
                     player.scheduler.run(plugin, { _ -> onConfirm() }, null)
                 }, net.kyori.adventure.text.event.ClickCallback.Options.builder().build()))
                 .build()
 
-            val cancelAction = ActionButton.builder(Component.text("Annuler").color(net.kyori.adventure.text.format.NamedTextColor.RED))
+            val cancelAction = ActionButton.builder(cancelLabel.color(net.kyori.adventure.text.format.NamedTextColor.RED))
                 .action(instances.register({ _, _ ->
                     player.scheduler.run(plugin, { _ -> onCancel() }, null)
                 }, net.kyori.adventure.text.event.ClickCallback.Options.builder().build()))
@@ -925,17 +944,18 @@ object MenuSessionService : Listener {
         player: Player,
         title: Component,
         inputs: List<DialogInput>,
+        confirmLabel: Component = Component.text("Confirm"),
         onConfirm: (Map<String, String>) -> Unit
     ) {
         val dialog = Dialog.create { builder ->
             val instances = DialogInstancesProvider.instance()
-            
+
             val base = DialogBase.builder(title)
                 .canCloseWithEscape(true)
                 .inputs(inputs)
                 .build()
 
-            val confirmAction = ActionButton.builder(Component.text("Confirmer"))
+            val confirmAction = ActionButton.builder(confirmLabel)
                 .action(instances.register({ response: DialogResponseView, _ ->
                     val results = inputs.associateBy({ it.key() }, { response.getText(it.key()) ?: "" })
                     player.scheduler.run(plugin, { _ -> onConfirm(results) }, null)
@@ -1002,15 +1022,21 @@ object MenuSessionService : Listener {
         } else {
             // For normal GUIs, require strict reference equality.
             if (session.currentInventory == null || event.inventory != session.currentInventory) {
-                // The closed inventory is NOT the one this session owns: either our GUI is
-                // already gone (its reference was captured before an async reopen) or the
-                // player is closing a REAL container while this session lingered.
+                // The closed inventory is NOT the one this session owns. Two very different
+                // situations land here, and the holder is what tells them apart:
                 //
-                // NEVER clear it — clearing a mismatched inventory here was wiping player
-                // chests. Drop the now-defunct session so it can no longer hijack later
-                // clicks or auto-refresh renders into a real container.
-                activeSessions.remove(player.uniqueId)
-                session.refreshTask?.cancel()
+                //  - Not one of ours → the player is closing a REAL container while this session
+                //    lingered. Never clear it (that was wiping player chests) and drop the
+                //    defunct session so it can't hijack later clicks or refresh renders.
+                //  - One of ours → our own async reopen race: GuiFactory.open() is scheduled on
+                //    the player scheduler, so `currentInventory` still points at the previous
+                //    view when the swap fires this close. Dropping the session here left the new
+                //    menu on screen with nothing guarding it — items became draggable and every
+                //    button went dead. Keep the session; the new view is already rendering.
+                if (!btcrenaud.gui.GuiInventoryHolder.owns(event.inventory)) {
+                    activeSessions.remove(player.uniqueId)
+                    session.refreshTask?.cancel()
+                }
                 return
             }
         }

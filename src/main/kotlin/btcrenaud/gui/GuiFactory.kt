@@ -142,7 +142,8 @@ object GuiFactory {
         }
 
         val inventory: Inventory = view?.topInventory
-            ?: Bukkit.createInventory(null, type, title).also { player.openInventory(it) }
+            ?: createOwned { holder -> Bukkit.createInventory(holder, type, title) }
+                .also { player.openInventory(it) }
 
         applySlots(inventory, definition)
         player.updateInventory()
@@ -150,10 +151,21 @@ object GuiFactory {
 
     private fun openSized(player: Player, definition: GuiDefinition) {
         val size = definition.size?.slots ?: error("${definition.type} GUI requires a size")
-        val inventory = Bukkit.createInventory(null, size, definition.title ?: ComponentHolder.none())
+        val inventory = createOwned { holder ->
+            Bukkit.createInventory(holder, size, definition.title ?: ComponentHolder.none())
+        }
         player.openInventory(inventory)
         applySlots(inventory, definition)
         player.updateInventory()
+    }
+
+    /**
+     * Creates an inventory tagged with a [GuiInventoryHolder] so menu protection can identify it
+     * without depending on an active session. See [GuiInventoryHolder].
+     */
+    private inline fun createOwned(create: (GuiInventoryHolder) -> Inventory): Inventory {
+        val holder = GuiInventoryHolder()
+        return create(holder).also { holder.backing = it }
     }
 
     private fun applySlots(inventory: Inventory, definition: GuiDefinition) {

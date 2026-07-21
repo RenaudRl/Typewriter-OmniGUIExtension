@@ -239,6 +239,50 @@ data class GuiItemData(
  * Extracted from the GuiItemData god object to keep the data class focused on configuration.
  */
 object GuiSlotBuilder {
+    /**
+     * Expands an item's repetition settings into the positions it occupies.
+     *
+     * This is the canonical repetition semantics for the whole ecosystem — `gap` is a step
+     * multiplier (1 = adjacent), `count` repeats along [GuiItemData.direction] and `repeatY`
+     * adds rows perpendicular to it. Extensions that place their own markers (Shops'
+     * `SHOP_ITEM`, QuestCodex's `QUEST_SLOT`/`CATEGORY_SLOT`) MUST call this instead of
+     * reimplementing the maths: divergent copies are what made tagged markers refuse to spread.
+     *
+     * `count`/`repeatY` are coerced to at least 1 because the editor serializes an unset value
+     * as `0`, and `0 until 0` would silently drop the item entirely.
+     */
+    fun expandPositions(data: GuiItemData): List<Pair<Int, Int>> {
+        // No direction = single position at (x, y), no repetition.
+        val direction = data.direction ?: return listOf(data.x to data.y)
+        val positions = mutableListOf<Pair<Int, Int>>()
+        for (ry in 0 until data.repeatY.coerceAtLeast(1)) {
+            for (rc in 0 until data.count.coerceAtLeast(1)) {
+                val px: Int
+                val py: Int
+                when (direction) {
+                    Direction.right -> {
+                        px = data.x + rc * data.gap  // rc shifts in x
+                        py = data.y + ry * data.gap  // ry shifts in y
+                    }
+                    Direction.left -> {
+                        px = data.x - rc * data.gap
+                        py = data.y + ry * data.gap
+                    }
+                    Direction.down -> {
+                        px = data.x + ry * data.gap  // ry shifts in x
+                        py = data.y + rc * data.gap  // rc shifts in y
+                    }
+                    Direction.up -> {
+                        px = data.x + ry * data.gap
+                        py = data.y - rc * data.gap
+                    }
+                }
+                positions.add(px to py)
+            }
+        }
+        return positions
+    }
+
     fun build(
         player: Player,
         context: InteractionContext,
@@ -312,40 +356,7 @@ object GuiSlotBuilder {
             )
         }
 
-        val positions = mutableListOf<Pair<Int, Int>>()
-        val direction = data.direction
-        if (direction == null) {
-            // No direction = single position at (x, y), no repetition
-            positions.add(data.x to data.y)
-        } else {
-            // Coerce to at least 1: the editor serializes an un-set repeatY/count as 0, and
-            // `0 until 0` would silently drop the item. Mirrors expandMarkerPositions().
-            for (ry in 0 until data.repeatY.coerceAtLeast(1)) {
-                for (rc in 0 until data.count.coerceAtLeast(1)) {
-                    val px: Int
-                    val py: Int
-                    when (direction) {
-                        Direction.right -> {
-                            px = data.x + rc * data.gap  // rc shifts in x
-                            py = data.y + ry * data.gap  // ry shifts in y
-                        }
-                        Direction.left -> {
-                            px = data.x - rc * data.gap
-                            py = data.y + ry * data.gap
-                        }
-                        Direction.down -> {
-                            px = data.x + ry * data.gap  // ry shifts in x
-                            py = data.y + rc * data.gap  // rc shifts in y
-                        }
-                        Direction.up -> {
-                            px = data.x + ry * data.gap
-                            py = data.y - rc * data.gap
-                        }
-                    }
-                    positions.add(px to py)
-                }
-            }
-        }
+        val positions = expandPositions(data)
 
         return positions.map { (px, py) ->
             val baseSlot = btcrenaud.gui.api.GuiSlot(
