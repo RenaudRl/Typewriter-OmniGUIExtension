@@ -115,6 +115,15 @@ object MenuSessionService : Listener {
     /** PDC marker on ghost-copied items so they can be reclaimed on close. */
     private val GHOST_KEY = org.bukkit.NamespacedKey("omnigui", "ghost_item")
 
+    /**
+     * True when [inventory] was created by GuiFactory (it carries a GuiInventoryHolder).
+     * Checked via class NAME, not a class literal: Paper's ClassLoader cannot resolve
+     * extension classes during event dispatch (same pitfall as the StorageGuiSlot check
+     * in onClick), so referencing GuiInventoryHolder here would NoClassDefFoundError.
+     */
+    private fun isGuiInventory(inventory: org.bukkit.inventory.Inventory?): Boolean =
+        inventory?.getHolder(false)?.javaClass?.name == "btcrenaud.gui.GuiInventoryHolder"
+
     data class AnimatedSlotState(
         val slot: btcrenaud.gui.api.GuiSlot,
         val startTime: Long,
@@ -436,7 +445,7 @@ object MenuSessionService : Listener {
             // while its menu stayed on screen (async reopen race, stale-session cleanup...).
             // Lock it down instead of failing open — otherwise the menu degrades into a plain
             // editable container and its items can be carried off into the player's inventory.
-            if (btcrenaud.gui.GuiInventoryHolder.owns(event.view.topInventory)) {
+            if (isGuiInventory(event.view.topInventory)) {
                 event.isCancelled = true
             }
             return
@@ -629,7 +638,7 @@ object MenuSessionService : Listener {
         val session = activeSessions[player.uniqueId]
         if (session == null) {
             // Same fail-closed guard as onClick: a menu without a session is still a menu.
-            if (btcrenaud.gui.GuiInventoryHolder.owns(event.view.topInventory)) {
+            if (isGuiInventory(event.view.topInventory)) {
                 event.isCancelled = true
             }
             return
@@ -1033,7 +1042,7 @@ object MenuSessionService : Listener {
                 //    view when the swap fires this close. Dropping the session here left the new
                 //    menu on screen with nothing guarding it — items became draggable and every
                 //    button went dead. Keep the session; the new view is already rendering.
-                if (!btcrenaud.gui.GuiInventoryHolder.owns(event.inventory)) {
+                if (!isGuiInventory(event.inventory)) {
                     activeSessions.remove(player.uniqueId)
                     session.refreshTask?.cancel()
                 }

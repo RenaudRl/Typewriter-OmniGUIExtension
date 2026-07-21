@@ -37,5 +37,8 @@ object Initializer : Initializable {
 
     override suspend fun shutdown() {
         MenuSessionService.shutdown()
+        // Unregister too, or every extension reload leaves a stale listener from the old,
+        // closed classloader — which then NoClassDefFoundErrors on every inventory event.
+        DragAndDropService.shutdown()
     }
 }

@@ -19,6 +19,19 @@ object DragAndDropService : Listener {
         Bukkit.getPluginManager().registerEvents(this, plugin)
     }
 
+    fun shutdown() {
+        org.bukkit.event.HandlerList.unregisterAll(this)
+    }
+
+    /**
+     * True when [inventory] was created by GuiFactory (it carries a GuiInventoryHolder).
+     * Checked via class NAME, not a class literal: Paper's ClassLoader cannot resolve
+     * extension classes during event dispatch (same pitfall as StorageGuiSlot in
+     * MenuSessionService), so referencing GuiInventoryHolder here would NoClassDefFoundError.
+     */
+    private fun isGuiInventory(inventory: org.bukkit.inventory.Inventory?): Boolean =
+        inventory?.getHolder(false)?.javaClass?.name == "btcrenaud.gui.GuiInventoryHolder"
+
     @EventHandler
     fun onDrag(event: InventoryDragEvent) {
         val player = event.whoClicked as? Player ?: return
@@ -27,7 +40,7 @@ object DragAndDropService : Listener {
         val session = MenuSessionService.getSession(player)
         if (session == null) {
             // Fail closed: a menu whose session was dropped is still a menu, not a chest.
-            if (btcrenaud.gui.GuiInventoryHolder.owns(event.view.topInventory)) {
+            if (isGuiInventory(event.view.topInventory)) {
                 event.isCancelled = true
             }
             return
@@ -62,7 +75,7 @@ object DragAndDropService : Listener {
         val session = MenuSessionService.getSession(player)
         if (session == null) {
             // Fail closed: block shift-moves into/out of a menu that lost its session.
-            if (btcrenaud.gui.GuiInventoryHolder.owns(event.view.topInventory)) {
+            if (isGuiInventory(event.view.topInventory)) {
                 event.isCancelled = true
             }
             return
