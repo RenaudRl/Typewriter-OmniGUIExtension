@@ -5,6 +5,7 @@ import com.typewritermc.core.extension.annotations.Colored
 import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.MultiLine
 import com.typewritermc.core.extension.annotations.Placeholder
+import com.typewritermc.core.extension.annotations.Tags
 import com.typewritermc.core.extension.annotations.Help
 import com.typewritermc.core.extension.annotations.AlgebraicTypeInfo
 import com.typewritermc.core.books.pages.Colors
@@ -32,9 +33,9 @@ import org.bukkit.Material
 import btcrenaud.gui.api.MenuAudioConfig
 import btcrenaud.gui.api.InteractionType
 import btcrenaud.gui.api.Viewport
+import btcrenaud.gui.api.StorageGuiSlot
 import com.typewritermc.engine.paper.utils.Sound
 import com.typewritermc.core.entries.emptyRef
-import btcrenaud.gui.api.StorageGuiSlot
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
@@ -50,6 +51,7 @@ import kotlinx.serialization.SerialName
     com.typewritermc.core.books.pages.Colors.BLUE,
     "mdi:treasure-chest-outline"
 )
+@Tags("gui", "gui_menu")
 class OpenGuiActionEntry(
     override val id: String = "",
     override val name: String = "",
@@ -65,6 +67,8 @@ class OpenGuiActionEntry(
     val size: InventorySize? = null,
     @Help("Collection of layouts available to this menu. Referenced by mainLayoutId and frame layoutId fields.")
     val layoutPool: List<LayoutData> = emptyList(),
+    @Help("Reusable storage configurations referenced by GUI items through storageId.")
+    val storagePool: List<StorageSlotData> = emptyList(),
     @Help("ID of the layout from layoutPool to use as the main layout. If null, an empty menu is shown.")
     val mainLayoutId: String? = null,
     @Help("Custom audio configuration for this menu (open, close, scroll, click sounds).")
@@ -88,6 +92,8 @@ class OpenGuiActionEntry(
             ?.let { Ref(it, OpenGuiActionEntry::class).get() }
         val pool = ((base?.layoutPool ?: emptyList()) + layoutPool)
             .filterNotNull()
+            .associateBy { it.id }
+        val effectiveStoragePool = (base?.storagePool.orEmpty() + storagePool.orEmpty())
             .associateBy { it.id }
         val effectiveMainLayoutId = mainLayoutId ?: base?.mainLayoutId
         val mainLayout = effectiveMainLayoutId?.let { pool[it] }
@@ -145,7 +151,10 @@ class OpenGuiActionEntry(
 
         // Final layout resolution
         val finalLayout: btcrenaud.gui.api.MenuLayout = mainLayout?.let {
-            btcrenaud.gui.api.LayoutParser.parse(player, context, guiType, totalSize, pool, it)
+            btcrenaud.gui.api.LayoutParser.parse(
+                player, context, guiType, totalSize, pool, it,
+                storagePool = effectiveStoragePool
+            )
         } ?: btcrenaud.gui.api.EmptyLayout
 
         // Menu states (_gui_states): when present, wrap the layout so per-player
@@ -199,8 +208,8 @@ data class GuiItemData(
     val interactionList: List<InteractionData> = emptyList(),
     @Help("Input dialog configuration. When set, clicking this slot opens an input prompt.")
     val input: InputData? = null,
-    @Help("Persistent storage configuration. When set, this slot becomes a storage slot backed by a gui_storage artifact.")
-    val storage: StorageSlotData? = null,
+    @Help("ID of a reusable storage configuration from the menu storagePool. Leave empty for a normal slot.")
+    val storageId: String? = null,
     @Help("If true, the item appears as a ghost (not collectable, same as allowPickup=false but semantically different).")
     val isGhost: Boolean = false,
     @Help("Animation applied to this slot when the menu opens.")
@@ -228,8 +237,14 @@ data class GuiItemData(
     @Help("Number of rows to repeat in the secondary direction.")
     val repeatY: Int = 1,
 ) {
-    fun toSlot(player: Player, context: InteractionContext, guiType: GuiType, width: Int = 9): List<btcrenaud.gui.api.GuiSlot> {
-        return GuiSlotBuilder.build(player, context, guiType, width, this)
+    fun toSlot(
+        player: Player,
+        context: InteractionContext,
+        guiType: GuiType,
+        width: Int = 9,
+        storagePool: Map<String, StorageSlotData> = emptyMap(),
+    ): List<btcrenaud.gui.api.GuiSlot> {
+        return GuiSlotBuilder.build(player, context, guiType, width, this, storagePool)
     }
 }
 
@@ -289,6 +304,7 @@ object GuiSlotBuilder {
         guiType: GuiType,
         width: Int,
         data: GuiItemData,
+        storagePool: Map<String, StorageSlotData> = emptyMap(),
     ): List<btcrenaud.gui.api.GuiSlot> {
         if (!data.criteria.matches(player, context)) return emptyList()
         if (data.viewPermission != null && !player.hasPermission(data.viewPermission)) return emptyList()
@@ -374,8 +390,8 @@ object GuiSlotBuilder {
                 },
                 cooldownTicks = data.cooldownTicks
             )
-            if (data.storage != null) {
-                val storage = data.storage
+            val storage = data.storageId?.let(storagePool::get)
+            if (storage != null) {
                 val entry = storage.entry.get() ?: return@map baseSlot
                 val groupEntry = storage.group.get()
                 val groupKey = groupEntry?.groupId(player)?.id ?: player.uniqueId.toString()
@@ -402,12 +418,12 @@ object GuiSlotBuilder {
                     accumulated = 0,
                     allowPickup = data.allowPickup,
                     isGhost = data.isGhost,
-                    commands = emptyList(), // Commands are on interactions
+                    commands = emptyList(),
                     triggers = data.triggers,
                     modifiers = data.modifiers,
                     interactions = allInteractions,
                     input = data.input,
-                    storage = data.storage,
+                    storage = storage,
                     animation = data.animation?.let { anim ->
                         btcrenaud.gui.api.SlotAnimation(anim.targetX, anim.targetY, anim.duration, anim.easing)
                     },
@@ -538,13 +554,19 @@ data class PaginatedLayoutData(
     val slots: List<Int> = emptyList(),
     @Help("Items to paginate across multiple pages.")
     val items: List<GuiItemData> = emptyList(),
-    @Help("Next-page navigation button. Shown on every page except the last.")
-    val nextPage: ScrollButtonData? = null,
-    @Help("Previous-page navigation button. Shown on every page except the first.")
-    val previousPage: ScrollButtonData? = null,
-    @Help("Back navigation button. Always visible.")
-    val backButton: ScrollButtonData? = null
+    @Help("Navigation buttons. Add NEXT, PREVIOUS and/or BACK roles as needed.")
+    val navigationButtons: List<PaginationButtonData> = emptyList()
 ) : LayoutData
+
+enum class PaginationButtonRole { NEXT, PREVIOUS, BACK }
+
+@Serializable
+data class PaginationButtonData(
+    @Help("Role performed by this navigation button.")
+    val role: PaginationButtonRole = PaginationButtonRole.NEXT,
+    @Help("The item displayed for this navigation button.")
+    val item: GuiItemData = GuiItemData(),
+)
 
 /** A layout that can be scrolled if the content exceeds the viewport. */
 @Serializable
@@ -660,6 +682,8 @@ data class StorageSlotLayoutItemData(
  */
 @Serializable
 data class StorageSlotData(
+    @Help("Unique identifier referenced by GUI item storageId fields.")
+    val id: String = "",
     @Help("Reference to a gui_storage artifact entry")
     val entry: Ref<btcrenaud.gui.entries.GuiStorageEntry> = emptyRef(),
     @Help("Group that determines the storage scope. Leave empty for per-player storage. Use a group entry (e.g. island group) for shared storage.")

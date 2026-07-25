@@ -279,7 +279,7 @@ open class GuiSlot(
     val item: org.bukkit.inventory.ItemStack,
     @Help("Whether players can pick up this item from the GUI.")
     val allowPickup: Boolean = false,
-    @Help("If true, clicking this item copies it to the cursor instead of moving it (Ghost Mode).")
+    @Help("If true, this is a display-only item: clicks may run interactions, but the item cannot be moved or copied.")
     val isGhost: Boolean = false,
     @Help("Commands executed when this slot is interacted with.")
     val commands: List<String> = emptyList(),

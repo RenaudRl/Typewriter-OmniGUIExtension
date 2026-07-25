@@ -4,12 +4,17 @@ plugins {
 }
 
 group = "btcrenaud"
-version = "0.3.5"
+version = "0.9"
 
 repositories {
     mavenCentral()
     maven("https://maven.typewritermc.com/beta/")
     maven("https://jitpack.io/")
+}
+
+dependencies {
+    testImplementation(kotlin("test"))
+    testImplementation("com.google.code.gson:gson:2.13.1")
 }
 
 typewriter {

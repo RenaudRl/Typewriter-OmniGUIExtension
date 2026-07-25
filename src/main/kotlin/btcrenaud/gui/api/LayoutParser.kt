@@ -15,9 +15,10 @@ object LayoutParser {
         guiType: GuiType, 
         totalSize: Int, 
         data: List<GuiItemData>, 
-        width: Int = 9
+        width: Int = 9,
+        storagePool: Map<String, StorageSlotData> = emptyMap(),
     ): List<GuiSlot> {
-        val base = data.flatMap { it.toSlot(player, context, guiType, width) }
+        val base = data.flatMap { it.toSlot(player, context, guiType, width, storagePool) }
         return base.filter { slot -> slot.x >= 0 && slot.y >= 0 && slot.x < width && slot.y >= 0 }
     }
 
@@ -31,7 +32,8 @@ object LayoutParser {
         nested: Boolean = false,
         width: Int = 9,
         visited: MutableSet<String> = mutableSetOf(),
-        cache: MutableMap<String, MenuLayout> = mutableMapOf()
+        cache: MutableMap<String, MenuLayout> = mutableMapOf(),
+        storagePool: Map<String, StorageSlotData> = emptyMap(),
     ): MenuLayout {
         val layoutKey = data.id.ifEmpty { "${data::class.simpleName}@${System.identityHashCode(data)}" }
         // Diamond reuse: return cached result if already fully parsed
@@ -41,12 +43,14 @@ object LayoutParser {
         visited.add(layoutKey)
         val result = when (data) {
             is SimpleLayoutData -> SimpleLayout(
-                slots = buildSlots(player, context, guiType, totalSize, data.items, width),
+                slots = buildSlots(player, context, guiType, totalSize, data.items, width, storagePool),
                 id = data.id
             )
             is PaginatedLayoutData -> {
                 val slots = data.slots.ifEmpty { (0 until totalSize).toList() }
-                val itemSlots = data.items.flatMap { it.toSlot(player, context, guiType) }
+                val itemSlots = data.items.flatMap {
+                    it.toSlot(player, context, guiType, storagePool = storagePool)
+                }
                 
                 // Slice items into pages
                 val pages = itemSlots.chunked(data.itemsPerPage.coerceAtLeast(1))
@@ -63,18 +67,18 @@ object LayoutParser {
 
                 PaginatedLayout(
                     pages = apiPages,
-                    nextSlot = data.nextPage?.let { btn ->
-                        btn.item.toSlot(player, context, guiType).firstOrNull()?.let { 
+                    nextSlot = data.navigationButtons.orEmpty().firstOrNull { it.role == PaginationButtonRole.NEXT }?.let { btn ->
+                        btn.item.toSlot(player, context, guiType, storagePool = storagePool).firstOrNull()?.let {
                             it.copy(commands = it.commands + "gui:page 1 ${data.id}")
                         }
                     },
-                    prevSlot = data.previousPage?.let { btn ->
-                        btn.item.toSlot(player, context, guiType).firstOrNull()?.let { 
+                    prevSlot = data.navigationButtons.orEmpty().firstOrNull { it.role == PaginationButtonRole.PREVIOUS }?.let { btn ->
+                        btn.item.toSlot(player, context, guiType, storagePool = storagePool).firstOrNull()?.let {
                             it.copy(commands = it.commands + "gui:page -1 ${data.id}")
                         }
                     },
-                    backSlot = data.backButton?.let { btn ->
-                        btn.item.toSlot(player, context, guiType).firstOrNull()?.let {
+                    backSlot = data.navigationButtons.orEmpty().firstOrNull { it.role == PaginationButtonRole.BACK }?.let { btn ->
+                        btn.item.toSlot(player, context, guiType, storagePool = storagePool).firstOrNull()?.let {
                             it.copy(commands = it.commands + "gui:back")
                         }
                     },
@@ -84,7 +88,9 @@ object LayoutParser {
             is ScrollableLayoutData -> {
                 val innerData = data.innerId?.let { pool[it] }
                 val innerWidth = data.virtualWidth ?: innerData?.let { if (it is SimpleLayoutData) 9 else null } ?: 9
-                val inner = innerData?.let { parse(player, context, guiType, totalSize, pool, it, nested = true, width = innerWidth, visited = visited, cache = cache) } ?: EmptyLayout
+                val inner = innerData?.let {
+                    parse(player, context, guiType, totalSize, pool, it, nested = true, width = innerWidth, visited = visited, cache = cache, storagePool = storagePool)
+                } ?: EmptyLayout
                 
                 var up: GuiSlot? = null
                 var down: GuiSlot? = null
@@ -93,7 +99,7 @@ object LayoutParser {
                 
                 // Custom buttons
                 data.buttons.forEach { btn ->
-                    btn.item.toSlot(player, context, guiType, 9).forEach { slot ->
+                    btn.item.toSlot(player, context, guiType, 9, storagePool).forEach { slot ->
                         val cmd = when(btn.direction) {
                             ScrollDirection.UP -> "gui:scroll 0 -${btn.step} ${data.id}"
                             ScrollDirection.DOWN -> "gui:scroll 0 ${btn.step} ${data.id}"
@@ -127,7 +133,9 @@ object LayoutParser {
 
             is FrameLayoutData -> {
                 val frames = data.frames.mapNotNull { frame ->
-                    val innerLayout = frame.layoutId?.let { pool[it] }?.let { parse(player, context, guiType, totalSize, pool, it, nested = true, width = frame.width, visited = visited, cache = cache) } ?: return@mapNotNull null
+                    val innerLayout = frame.layoutId?.let { pool[it] }?.let {
+                        parse(player, context, guiType, totalSize, pool, it, nested = true, width = frame.width, visited = visited, cache = cache, storagePool = storagePool)
+                    } ?: return@mapNotNull null
                     MenuFrame(frame.id, frame.x, frame.y, frame.width, frame.height, innerLayout)
                 }
                 FrameLayout(frames, data.id)

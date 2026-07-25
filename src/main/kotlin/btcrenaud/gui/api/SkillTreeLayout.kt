@@ -1,7 +1,7 @@
 package btcrenaud.gui.api
 
 import btcrenaud.gui.entries.GuiSettingEntry
-import btcrenaud.gui.entries.NodeDirectionalMap
+import btcrenaud.gui.entries.NodeDirection
 import btcrenaud.gui.entries.NodeState
 import btcrenaud.gui.services.MenuSessionService
 import com.typewritermc.core.entries.Query
@@ -24,21 +24,23 @@ class SkillTreeLayout(
      * Cached settings with TTL to avoid Query.find on every render.
      */
     private data class CachedSettings(
-        val nodeDefaults: Map<NodeState, NodeDirectionalMap>,
+        val nodeDefaults: Map<Pair<NodeState, NodeDirection>, Item>,
         val timestamp: Long
     )
 
     private var cachedSettings: CachedSettings? = null
     private val cacheTtlMs = 5_000L
 
-    private fun getSettings(): Map<NodeState, NodeDirectionalMap> {
+    private fun getSettings(): Map<Pair<NodeState, NodeDirection>, Item> {
         val now = System.currentTimeMillis()
         val cached = cachedSettings
         if (cached != null && (now - cached.timestamp) < cacheTtlMs) {
             return cached.nodeDefaults
         }
         val settings = try {
-            Query.find<GuiSettingEntry>().firstOrNull()?.nodeDefaults ?: emptyMap()
+            Query.find<GuiSettingEntry>().firstOrNull()?.nodeDefaults
+                ?.associate { (it.state to it.direction) to it.item }
+                ?: emptyMap()
         } catch (_: Exception) {
             emptyMap()
         }
@@ -80,9 +82,8 @@ class SkillTreeLayout(
                 from != null && to != null && point in pathPointsBetween(from, to)
             }
             val state = relevantConnection?.let { stateProvider(it, session) } ?: NodeState.UNLOCKED
-            val directionalMap = settings[state] ?: NodeDirectionalMap()
-
-            val item = resolveConnector(directionalMap, up, down, left, right)
+            val direction = resolveDirection(up, down, left, right)
+            val item = settings[state to direction] ?: Item.Empty
             if (item != Item.Empty) {
                 slots[point] = GuiSlot(point.first, point.second, item.build(session.player))
             }
@@ -119,24 +120,24 @@ class SkillTreeLayout(
         return path.contains(x to y) || cores.any { it.x == x && it.y == y }
     }
 
-    private fun resolveConnector(map: NodeDirectionalMap, up: Boolean, down: Boolean, left: Boolean, right: Boolean): Item {
+    private fun resolveDirection(up: Boolean, down: Boolean, left: Boolean, right: Boolean): NodeDirection {
         return when {
-            up && down && left && right -> map.upDownLeftRight
-            up && down && left -> map.upDownLeft
-            up && down && right -> map.upDownRight
-            up && left && right -> map.upLeftRight
-            down && left && right -> map.downLeftRight
-            up && down -> map.upDown
-            up && left -> map.upLeft
-            up && right -> map.upRight
-            down && left -> map.downLeft
-            down && right -> map.downRight
-            left && right -> map.leftRight
-            up -> map.up
-            down -> map.down
-            left -> map.left
-            right -> map.right
-            else -> map.none
+            up && down && left && right -> NodeDirection.UP_DOWN_LEFT_RIGHT
+            up && down && left -> NodeDirection.UP_DOWN_LEFT
+            up && down && right -> NodeDirection.UP_DOWN_RIGHT
+            up && left && right -> NodeDirection.UP_LEFT_RIGHT
+            down && left && right -> NodeDirection.DOWN_LEFT_RIGHT
+            up && down -> NodeDirection.UP_DOWN
+            up && left -> NodeDirection.UP_LEFT
+            up && right -> NodeDirection.UP_RIGHT
+            down && left -> NodeDirection.DOWN_LEFT
+            down && right -> NodeDirection.DOWN_RIGHT
+            left && right -> NodeDirection.LEFT_RIGHT
+            up -> NodeDirection.UP
+            down -> NodeDirection.DOWN
+            left -> NodeDirection.LEFT
+            right -> NodeDirection.RIGHT
+            else -> NodeDirection.NONE
         }
     }
 

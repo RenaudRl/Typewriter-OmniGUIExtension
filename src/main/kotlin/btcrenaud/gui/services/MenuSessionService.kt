@@ -112,9 +112,6 @@ object MenuSessionService : Listener {
         var refreshTask: io.papermc.paper.threadedregions.scheduler.ScheduledTask? = null
     )
 
-    /** PDC marker on ghost-copied items so they can be reclaimed on close. */
-    private val GHOST_KEY = org.bukkit.NamespacedKey("omnigui", "ghost_item")
-
     /**
      * True when [inventory] was created by GuiFactory (it carries a GuiInventoryHolder).
      * Checked via class NAME, not a class literal: Paper's ClassLoader cannot resolve
@@ -540,21 +537,9 @@ object MenuSessionService : Listener {
             return
         }
 
-        // Ghost Mode handling
-        if (clickedSlot?.isGhost == true) {
-            event.isCancelled = true
-            // The copy is PDC-tagged so it can never leave the session:
-            // the cursor is wiped on close/quit if it still carries the tag.
-            val ghost = clickedSlot.item.clone()
-            ghost.editMeta { meta ->
-                meta.persistentDataContainer.set(GHOST_KEY, org.bukkit.persistence.PersistentDataType.BYTE, 1)
-            }
-            player.setItemOnCursor(ghost)
-            return
-        }
-
-        // Cancel by default if no allowPickup
-        event.isCancelled = clickedSlot?.allowPickup != true
+        // Ghost slots are display-only buttons: they can be interacted with, but their item
+        // must never be copied to the cursor or moved out of the menu.
+        event.isCancelled = clickedSlot?.isGhost == true || clickedSlot?.allowPickup != true
 
         // Determine Interaction Type
         val interaction = if (event.click == org.bukkit.event.inventory.ClickType.NUMBER_KEY) {
@@ -1083,7 +1068,6 @@ object MenuSessionService : Listener {
         activeSessions.remove(player.uniqueId)
         session.refreshTask?.cancel()
 
-        clearGhostCursor(player)
         playSound(player, session.definition.audio.onClose, context())
         btcrenaud.gui.api.GuiCloseEvent(player, session.definition).callEvent()
     }
@@ -1115,16 +1099,6 @@ object MenuSessionService : Listener {
         }
     }
 
-    /** Wipes the cursor if it still holds a PDC-tagged ghost copy. */
-    private fun clearGhostCursor(player: Player) {
-        val cursor = player.itemOnCursor
-        if (!cursor.isEmpty && cursor.hasItemMeta() &&
-            cursor.itemMeta.persistentDataContainer.has(GHOST_KEY, org.bukkit.persistence.PersistentDataType.BYTE)
-        ) {
-            player.setItemOnCursor(null)
-        }
-    }
-
     @EventHandler
     fun onQuit(event: PlayerQuitEvent) {
         val session = activeSessions.remove(event.player.uniqueId) ?: return
@@ -1135,7 +1109,6 @@ object MenuSessionService : Listener {
         if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE || guiType == btcrenaud.gui.GuiType.MERCHANT) {
             returnMerchantInputs(event.player, event.player.openInventory.topInventory)
         }
-        clearGhostCursor(event.player)
         btcrenaud.gui.api.GuiCloseEvent(event.player, session.definition).callEvent()
     }
 

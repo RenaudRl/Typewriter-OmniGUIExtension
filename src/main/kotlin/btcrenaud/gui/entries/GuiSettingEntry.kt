@@ -77,8 +77,8 @@ class GuiSettingEntry(
     @Help("Configure which mouse/keyboard clicks trigger each storage action (place, take, fill, drop).")
     val storageInteraction: StorageInteractionConfig = StorageInteractionConfig(),
 
-    @Help("Default Skill Tree node connector items for each state.")
-    val nodeDefaults: Map<NodeState, NodeDirectionalMap> = emptyMap()
+    @Help("Skill Tree connector items. Add only the state and direction combinations that need a custom item.")
+    val nodeDefaults: List<NodeConnectorConfig> = emptyList()
 ) : ManifestEntry
 
 /**
@@ -95,47 +95,35 @@ enum class NodeState {
     FULLY_LOCKED
 }
 
+enum class NodeDirection {
+    NONE,
+    UP,
+    DOWN,
+    LEFT,
+    RIGHT,
+    UP_DOWN,
+    UP_LEFT,
+    UP_RIGHT,
+    DOWN_LEFT,
+    DOWN_RIGHT,
+    LEFT_RIGHT,
+    UP_DOWN_LEFT,
+    UP_DOWN_RIGHT,
+    UP_LEFT_RIGHT,
+    DOWN_LEFT_RIGHT,
+    UP_DOWN_LEFT_RIGHT,
+    NO_PATH
+}
+
 /**
- * Mapping of directional connectors to items.
+ * One connector override. A compact list prevents Typewriter from embedding the
+ * complete Item blueprint 68 times in the gui_settings editor schema.
  */
-data class NodeDirectionalMap(
-    @Help("Single node with no connections.")
-    val none: Item = Item.Empty,
-    
-    @Help("Connector towards Up.")
-    val up: Item = Item.Empty,
-    @Help("Connector towards Down.")
-    val down: Item = Item.Empty,
-    @Help("Connector towards Left.")
-    val left: Item = Item.Empty,
-    @Help("Connector towards Right.")
-    val right: Item = Item.Empty,
-
-    @Help("Connectors for Up and Down.")
-    val upDown: Item = Item.Empty,
-    @Help("Connectors for Up and Left.")
-    val upLeft: Item = Item.Empty,
-    @Help("Connectors for Up and Right.")
-    val upRight: Item = Item.Empty,
-    @Help("Connectors for Down and Left.")
-    val downLeft: Item = Item.Empty,
-    @Help("Connectors for Down and Right.")
-    val downRight: Item = Item.Empty,
-    @Help("Connectors for Left and Right.")
-    val leftRight: Item = Item.Empty,
-
-    @Help("Connectors for Up, Down, and Left.")
-    val upDownLeft: Item = Item.Empty,
-    @Help("Connectors for Up, Down, and Right.")
-    val upDownRight: Item = Item.Empty,
-    @Help("Connectors for Up, Left, and Right.")
-    val upLeftRight: Item = Item.Empty,
-    @Help("Connectors for Down, Left, and Right.")
-    val downLeftRight: Item = Item.Empty,
-
-    @Help("Connectors for all four directions (Cross).")
-    val upDownLeftRight: Item = Item.Empty,
-
-    @Help("Item used for empty/no path slots (background).")
-    val noPath: Item = Item.Empty
+data class NodeConnectorConfig(
+    @Help("Skill Tree node state.")
+    val state: NodeState = NodeState.UNLOCKED,
+    @Help("Neighbour directions represented by this connector.")
+    val direction: NodeDirection = NodeDirection.NONE,
+    @Help("Item displayed for this state and direction.")
+    val item: Item = Item.Empty
 )
