@@ -46,6 +46,23 @@ object LayoutParser {
                 slots = buildSlots(player, context, guiType, totalSize, data.items, width, storagePool),
                 id = data.id
             )
+            is FlexLayoutData -> FlexLayout(
+                slots = buildSlots(player, context, guiType, totalSize, data.items, width, storagePool),
+                justifyContent = data.justifyContent,
+                alignItems = data.alignItems,
+                wrap = data.wrap,
+                id = data.id,
+                virtualWidth = width,
+                virtualHeight = data.virtualHeight,
+            )
+            is CompositeLayoutData -> CompositeLayout(
+                children = data.children.mapNotNull { childId ->
+                    pool[childId]?.let {
+                        parse(player, context, guiType, totalSize, pool, it, nested = true, width = width, visited = visited, cache = cache, storagePool = storagePool)
+                    }
+                },
+                id = data.id,
+            )
             is PaginatedLayoutData -> {
                 val slots = data.slots.ifEmpty { (0 until totalSize).toList() }
                 val itemSlots = data.items.flatMap {

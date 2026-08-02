@@ -1,6 +1,7 @@
 package btcrenaud.gui.api
 
 import net.kyori.adventure.text.Component
+import org.bukkit.entity.Player
 import btcrenaud.gui.GuiType
 import btcrenaud.gui.InventorySize
 import btcrenaud.gui.services.MenuSessionService
@@ -24,7 +25,13 @@ data class MenuDefinition(
     @Help("Modular layout structure defining the contents of the GUI.")
     val layout: MenuLayout = EmptyLayout,
     @Help("Audio configuration for lifecycle events (Open, Close, Click, Scroll).")
-    val audio: MenuAudioConfig = MenuAudioConfig()
+    val audio: MenuAudioConfig = MenuAudioConfig(),
+    @Help("Id of the view currently rendered, when the source entry declares views.")
+    val activeViewId: String? = null,
+    @Help("Resolved breadcrumb of the active view, outermost segment first.")
+    val breadcrumb: List<String> = emptyList(),
+    @Transient
+    val viewSwitcher: ((Player, String) -> Unit)? = null
 )
 
 data class MenuAudioConfig(

@@ -727,6 +727,16 @@ object MenuSessionService : Listener {
 
     private fun handleInternalCommand(player: Player, session: ActiveSession, cmd: String, slot: btcrenaud.gui.api.GuiSlot? = null, interactionContext: com.typewritermc.core.interaction.InteractionContext) {
         when {
+            cmd.startsWith("gui:view ") -> {
+                val viewId = cmd.substringAfter("gui:view ").trim()
+                if (viewId.isEmpty() || viewId == session.definition.activeViewId) return
+                val switcher = session.definition.viewSwitcher
+                if (switcher == null) {
+                    plugin.logger.warning("[GUI] gui:view '$viewId' ignored — menu '${session.definition.id}' declares no views.")
+                } else {
+                    switcher(player, viewId)
+                }
+            }
             cmd.startsWith("gui:scroll ") -> {
                 val parts = cmd.split(" ")
                 val dx = parts.getOrNull(1)?.toIntOrNull() ?: 0
@@ -1129,7 +1139,7 @@ object MenuSessionService : Listener {
         } else {
             val plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Typewriter")
             if (plugin != null) {
-                org.bukkit.Bukkit.getScheduler().runTask(plugin, Runnable { player.closeInventory() })
+                player.scheduler.run(plugin, { _ -> player.closeInventory() }, null)
             }
         }
     }

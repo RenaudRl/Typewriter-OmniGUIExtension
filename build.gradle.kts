@@ -1,10 +1,11 @@
 plugins {
     kotlin("jvm") version "2.3.20"
     id("com.typewritermc.module-plugin") version "2.1.0"
+    `maven-publish`
 }
 
 group = "btcrenaud"
-version = "0.9"
+version = "0.10"
 
 repositories {
     mavenCentral()
@@ -35,5 +36,19 @@ typewriter {
 
 kotlin {
     jvmToolchain(21)
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+            groupId = project.group.toString()
+            artifactId = "Typewriter-OmniGUIExtension"
+            // QuestCodex resolves released OmniGUI artifacts with the tag-style
+            // version (v0.10), while the distributable jar keeps the semantic
+            // filename version (0.10).
+            version = "v${project.version}"
+        }
+    }
 }
 

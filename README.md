@@ -8,7 +8,7 @@
 
 **OmniGUIExtension** is the central menu system for the Typewriter ecosystem. It provides:
 
-- **8 layout engines** — Simple, Scrollable, Frame, Paginated, Composite, Book, Merchant, Vanilla GUIs
+- **9 layout engines** — Simple, Scrollable, Flex, Frame, Paginated, Composite, Book, Merchant, Vanilla GUIs
 - **23 inventory types** — Chest, Anvil, Enchanting, Smithing, Merchant, Book, and more
 - **Persistent item storage** — Per-player or group-based with accumulation/progress tracking
 - **Scrollable multi-frame dashboards** — Independent scrollable zones with custom navigation buttons
@@ -17,7 +17,9 @@
 - **Configurable click actions** — 9 click types (LEFT, RIGHT, SHIFT, DOUBLE, DROP, SWAP_OFFHAND...) per storage action
 - **Grid pattern system** — `count`/`direction`/`gap`/`repeatY` for efficient slot positioning
 
-> **Coming soon**: Web-based WYSIWYG editor with real-time preview and Flexbox auto-layout.
+The current release also provides reusable addressable views: declare `views`, use
+`@view` frame placeholders, and tag tabs with `view:<id>`. View changes are handled
+without closing the inventory and can optionally participate in the history stack.
 
 ## Installation
 
@@ -72,6 +74,7 @@ Create an `open_gui` entry in your Typewriter page:
 | **Scrollable** | Viewport with UP/DOWN/LEFT/RIGHT buttons | Long item lists |
 | **Frame** | Multiple independent zones with per-zone scroll | Dashboards, sidebars |
 | **Paginated** | Multi-page browsing with prev/next | Large collections |
+| **Flex** | Automatic row wrapping and alignment | Responsive slot groups |
 | **Composite** | Z-order layer stacking | Overlays |
 | **Book** | Written book with MiniMessage pages | Lore, guides |
 | **Merchant** | Villager trades with custom items | Shops |

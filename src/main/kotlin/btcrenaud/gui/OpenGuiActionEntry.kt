@@ -77,8 +77,27 @@ class OpenGuiActionEntry(
     val baseMenuId: String = "",
     @Help("Re-render the menu every N ticks while open (0 = disabled). For live counters/timers.")
     val autoRefreshTicks: Long = 0,
+    @Help("Addressable screens of this menu. Frames with layoutId '@view' and slots tagged 'view:<id>' resolve against the active one.")
+    val views: List<btcrenaud.gui.api.MenuViewData> = emptyList(),
+    @Help("View opened first. Empty = the first declared view.")
+    val defaultViewId: String? = null,
+    @Help("MiniMessage separator inserted between breadcrumb segments by the {breadcrumb} title token.")
+    @Colored
+    val breadcrumbSeparator: String = btcrenaud.gui.api.MenuViewSupport.DEFAULT_BREADCRUMB_SEPARATOR,
+    @Help("Push the previous view onto the back stack when switching tabs.")
+    val pushHistoryOnViewSwitch: Boolean = false,
 ) : ActionEntry {
     override fun ActionTrigger.execute() {
+        openFor(player, context, targetViewId = null, pushHistory = true)
+    }
+
+    /** Rebuilds the menu when a view switch changes the inventory chrome/title. */
+    fun openFor(
+        player: Player,
+        context: InteractionContext,
+        targetViewId: String?,
+        pushHistory: Boolean,
+    ) {
         val rawTitleString: String? = title.get(player, context)
             .takeIf { it.isNotEmpty() }
             ?.parsePlaceholders(player)
@@ -86,20 +105,24 @@ class OpenGuiActionEntry(
         val componentTitle: Component? = rawTitleString
             ?.asMiniCE()
 
-        // Template inheritance: the base menu's pool merges UNDER ours —
-        // a child layout with the same id overrides the template's version.
-        val base = baseMenuId.takeIf { it.isNotBlank() }
-            ?.let { Ref(it, OpenGuiActionEntry::class).get() }
-        val pool = ((base?.layoutPool ?: emptyList()) + layoutPool)
-            .filterNotNull()
+        val inherited = btcrenaud.gui.api.MenuViewSupport.inherit(
+            baseMenuId = baseMenuId,
+            ownPool = layoutPool,
+            ownViews = views,
+            ownMainLayoutId = mainLayoutId,
+            ownDefaultViewId = defaultViewId,
+        )
+        val pool = inherited.pool
+        val baseStoragePool = baseMenuId.takeIf { it.isNotBlank() }
+            ?.let { Ref(it, OpenGuiActionEntry::class).get()?.storagePool }
+        val effectiveStoragePool = (baseStoragePool.orEmpty() + storagePool.orEmpty())
             .associateBy { it.id }
-        val effectiveStoragePool = (base?.storagePool.orEmpty() + storagePool.orEmpty())
-            .associateBy { it.id }
-        val effectiveMainLayoutId = mainLayoutId ?: base?.mainLayoutId
+        val effectiveMainLayoutId = inherited.mainLayoutId
         val mainLayout = effectiveMainLayoutId?.let { pool[it] }
+        val effectiveViews = inherited.views
 
         val resolvedSize = when (guiType) {
-            GuiType.CUSTOM -> size ?: base?.size ?: InventorySize.SIZE_54 // default to 6 rows (54 slots)
+            GuiType.CUSTOM -> size ?: inherited.size ?: InventorySize.SIZE_54 // default to 6 rows (54 slots)
             else -> null
         }
         val totalSize = resolvedSize?.slots ?: guiType.inventoryType?.defaultSize ?: 54
@@ -116,7 +139,7 @@ class OpenGuiActionEntry(
                 } else {
                     val plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Typewriter")
                     if (plugin != null) {
-                        org.bukkit.Bukkit.getScheduler().runTask(plugin, java.lang.Runnable { player.closeInventory() })
+                        player.scheduler.run(plugin, { _ -> player.closeInventory() }, null)
                     }
                 }
             }
@@ -149,13 +172,32 @@ class OpenGuiActionEntry(
             return
         }
 
-        // Final layout resolution
-        val finalLayout: btcrenaud.gui.api.MenuLayout = mainLayout?.let {
-            btcrenaud.gui.api.LayoutParser.parse(
-                player, context, guiType, totalSize, pool, it,
-                storagePool = effectiveStoragePool
+        // Final layout resolution. Declared views resolve the shared frame shell;
+        // menus without views keep the original pool behavior unchanged.
+        val resolvedView = if (effectiveViews.isEmpty()) null else
+            btcrenaud.gui.api.MenuViewSupport.resolve(
+                player = player,
+                context = context,
+                guiType = guiType,
+                totalSize = totalSize,
+                pool = pool,
+                mainLayoutId = effectiveMainLayoutId,
+                views = effectiveViews,
+                defaultViewId = inherited.defaultViewId,
+                targetViewId = targetViewId,
+                baseTitle = title.get(player, context),
+                breadcrumbSeparator = breadcrumbSeparator,
+                storagePool = effectiveStoragePool,
             )
-        } ?: btcrenaud.gui.api.EmptyLayout
+
+        val finalLayout: btcrenaud.gui.api.MenuLayout = resolvedView?.layout
+            ?: mainLayout?.let {
+                btcrenaud.gui.api.LayoutParser.parse(
+                    player, context, guiType, totalSize, pool, it,
+                    storagePool = effectiveStoragePool
+                )
+            }
+            ?: btcrenaud.gui.api.EmptyLayout
 
         // Menu states (_gui_states): when present, wrap the layout so per-player
         // conditions and LayerOverrides apply at render time.
@@ -166,11 +208,14 @@ class OpenGuiActionEntry(
             btcrenaud.gui.editor.states.StateAwareLayout(id, id, states, finalLayout)
         }
 
+        val viewTitleString = (resolvedView?.rawTitle ?: title.get(player, context))
+            .takeIf { it.isNotEmpty() }
+            ?.parsePlaceholders(player)
         val definition = btcrenaud.gui.api.MenuDefinition(
             id = id,
             type = guiType,
-            title = componentTitle,
-            rawTitle = rawTitleString,
+            title = viewTitleString?.asMiniCE(),
+            rawTitle = viewTitleString,
             size = resolvedSize,
             layout = statefulLayout,
             audio = btcrenaud.gui.api.MenuAudioConfig(
@@ -178,10 +223,20 @@ class OpenGuiActionEntry(
                 onClose = audio.onClose,
                 onScroll = audio.onScroll,
                 onClick = audio.onClick
-            )
+            ),
+            activeViewId = resolvedView?.activeViewId,
+            breadcrumb = resolvedView?.breadcrumb ?: emptyList(),
+            viewSwitcher = if (effectiveViews.isEmpty()) null else { switchedPlayer, viewId ->
+                openFor(switchedPlayer, context, viewId, pushHistoryOnViewSwitch)
+            },
         )
 
-        btcrenaud.gui.services.MenuSessionService.register(player, definition, autoRefreshTicks = autoRefreshTicks)
+        btcrenaud.gui.services.MenuSessionService.register(
+            player,
+            definition,
+            pushHistory = pushHistory,
+            autoRefreshTicks = autoRefreshTicks,
+        )
     }
 }
 
@@ -539,6 +594,26 @@ data class SimpleLayoutData(
     override val id: String = "",
     @Help("List of items to display in this layout.")
     val items: List<GuiItemData> = emptyList()
+) : LayoutData
+
+/** A layout that positions slots with a configurable flex-like row algorithm. */
+@Serializable
+@AlgebraicTypeInfo("flex", com.typewritermc.core.books.pages.Colors.BLUE, "mdi:format-align-middle")
+data class FlexLayoutData(
+    override val id: String = "",
+    val items: List<GuiItemData> = emptyList(),
+    val justifyContent: btcrenaud.gui.api.FlexJustify = btcrenaud.gui.api.FlexJustify.START,
+    val alignItems: btcrenaud.gui.api.FlexAlign = btcrenaud.gui.api.FlexAlign.START,
+    val wrap: Boolean = true,
+    val virtualHeight: Int = 6,
+) : LayoutData
+
+/** A layout that overlays several existing layouts. */
+@Serializable
+@AlgebraicTypeInfo("composite", com.typewritermc.core.books.pages.Colors.PURPLE, "mdi:layers-outline")
+data class CompositeLayoutData(
+    override val id: String = "",
+    val children: List<String> = emptyList(),
 ) : LayoutData
 
 /** A layout that supports multiple pages of items. */

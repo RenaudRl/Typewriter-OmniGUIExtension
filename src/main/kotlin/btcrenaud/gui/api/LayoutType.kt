@@ -1,6 +1,6 @@
 package btcrenaud.gui.api
 
-enum class MenuLayoutType { PAGINATED, SCROLLABLE, FRAME, SIMPLE, STORAGE, SKILL_TREE }
+enum class MenuLayoutType { PAGINATED, SCROLLABLE, FLEX, FRAME, SIMPLE, STORAGE, SKILL_TREE, COMPOSITE }
 
 fun MenuBuilder.applyLayout(
     type: MenuLayoutType,
@@ -22,6 +22,15 @@ fun MenuBuilder.applyLayout(
             layout = SimpleLayout(items, virtualWidth = virtualWidth, virtualHeight = virtualHeight),
             id = id, virtualWidth = virtualWidth, virtualHeight = virtualHeight,
             leftSlot = prevSlot, rightSlot = nextSlot))
+        MenuLayoutType.FLEX -> layout(FlexLayout(
+            slots = items,
+            justifyContent = FlexJustify.START,
+            alignItems = FlexAlign.START,
+            wrap = true,
+            id = id,
+            virtualWidth = virtualWidth,
+            virtualHeight = virtualHeight,
+        ))
         MenuLayoutType.FRAME -> {
             val frames = items.groupBy { it.y }.toSortedMap().map { (row, rowItems) ->
                 MenuFrame("${id}_r$row", 0, row, virtualWidth, 1, SimpleLayout(rowItems, virtualWidth = virtualWidth, virtualHeight = 1))
@@ -31,5 +40,11 @@ fun MenuBuilder.applyLayout(
         MenuLayoutType.SIMPLE -> layout(SimpleLayout(items, id = id, virtualWidth = virtualWidth, virtualHeight = virtualHeight))
         MenuLayoutType.STORAGE, MenuLayoutType.SKILL_TREE ->
             layout(SimpleLayout(items, id = id, virtualWidth = virtualWidth, virtualHeight = virtualHeight))
+        MenuLayoutType.COMPOSITE -> layout(CompositeLayout(
+            children = listOf(SimpleLayout(items, id = id, virtualWidth = virtualWidth, virtualHeight = virtualHeight)),
+            id = id,
+            virtualWidth = virtualWidth,
+            virtualHeight = virtualHeight,
+        ))
     }
 }
