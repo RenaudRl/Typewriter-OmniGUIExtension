@@ -127,12 +127,49 @@ object OpenGuiSchemaNormalizer {
 
 /**
  * Migrates published and staging page files with one pre-migration backup and atomic
- * replacement. Running it repeatedly is a no-op after the first successful conversion.
+ * replacement.
+ *
+ * The conversion is one-shot: [migrateOnce] records a marker next to the pages once it has run,
+ * and every later start returns on a single file check instead of parsing every page. The
+ * per-entry `_omniGuiSchema` field still makes the conversion itself idempotent, so a lost or
+ * hand-deleted marker costs one extra scan, never a double conversion.
  */
 object OpenGuiPageMigrator {
     private val timestampFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
 
-    fun migrate(baseDirectory: File, logger: Logger): Int {
+    /** Written after the first conversion so the scan leaves the startup path for good. */
+    private const val MARKER_FILE = ".omnigui-schema-v2"
+
+    /**
+     * Runs the conversion at most once per installation.
+     *
+     * @return the number of page files rewritten, always 0 once the marker exists.
+     */
+    fun migrateOnce(baseDirectory: File, logger: Logger): Int {
+        val marker = baseDirectory.resolve(MARKER_FILE)
+        if (marker.isFile) return 0
+
+        val migrated = migrate(baseDirectory, logger)
+
+        // A marker that cannot be written only costs one more scan next start — the conversion
+        // is idempotent — so it is reported and swallowed rather than failing the extension.
+        runCatching {
+            baseDirectory.mkdirs()
+            marker.writeText(
+                "OmniGUI schema v${OpenGuiSchemaNormalizer.SCHEMA_VERSION} applied on " +
+                    "${LocalDateTime.now()}. Delete this file to force a re-scan.",
+                StandardCharsets.UTF_8,
+            )
+        }.onFailure {
+            logger.warning(
+                "[OmniGUI] Could not write ${marker.path}: ${it.message}. " +
+                    "Pages will be scanned again on the next start.",
+            )
+        }
+        return migrated
+    }
+
+    private fun migrate(baseDirectory: File, logger: Logger): Int {
         val candidates = listOf("pages", "staging").flatMap { directoryName ->
             val directory = baseDirectory.resolve(directoryName)
             directory.listFiles()

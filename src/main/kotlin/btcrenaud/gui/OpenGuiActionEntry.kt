@@ -190,7 +190,7 @@ class OpenGuiActionEntry(
                 storagePool = effectiveStoragePool,
             )
 
-        val finalLayout: btcrenaud.gui.api.MenuLayout = resolvedView?.layout
+        val parsedLayout: btcrenaud.gui.api.MenuLayout = resolvedView?.layout
             ?: mainLayout?.let {
                 btcrenaud.gui.api.LayoutParser.parse(
                     player, context, guiType, totalSize, pool, it,
@@ -198,6 +198,13 @@ class OpenGuiActionEntry(
                 )
             }
             ?: btcrenaud.gui.api.EmptyLayout
+
+        // Globally registered resolvers apply to EVERY `open_gui` menu. This is what lets a page
+        // place another extension's marker (e.g. a language toggle in a shared Settings tab) and
+        // get a live button instead of a dead item. With no resolver registered, the layout is
+        // returned unchanged.
+        val finalLayout: btcrenaud.gui.api.MenuLayout =
+            btcrenaud.gui.api.GlobalButtonResolvers.decorate(parsedLayout)
 
         // Menu states (_gui_states): when present, wrap the layout so per-player
         // conditions and LayerOverrides apply at render time.
@@ -283,13 +290,13 @@ data class GuiItemData(
     val x: Int = 0,
     @Help("Starting Y position (row) of this slot. 0 = top row.")
     val y: Int = 0,
-    @Help("Number of consecutive slots to create when direction is set.")
+    @Help("How many times this slot repeats along 'direction' — a number of SLOTS, not a stack size. To show a stack of 64, set the item's amount instead. Ignored when direction is unset.")
     val count: Int = 1,
     @Help("Direction in which to repeat this slot (right, left, down, up). Leave null for a single slot at (x, y).")
     val direction: Direction? = null,
     @Help("Gap in slots between repeated items. A gap of 1 means adjacent slots.")
     val gap: Int = 1,
-    @Help("Number of rows to repeat in the secondary direction.")
+    @Help("How many times the whole repetition repeats in the secondary direction — a number of ROWS of slots, not a stack size.")
     val repeatY: Int = 1,
 ) {
     fun toSlot(
@@ -629,11 +636,16 @@ data class PaginatedLayoutData(
     val slots: List<Int> = emptyList(),
     @Help("Items to paginate across multiple pages.")
     val items: List<GuiItemData> = emptyList(),
-    @Help("Navigation buttons. Add NEXT, PREVIOUS and/or BACK roles as needed.")
+    @Help("Navigation buttons. Add NEXT, PREVIOUS, BACK and/or INDICATOR roles as needed.")
     val navigationButtons: List<PaginationButtonData> = emptyList()
 ) : LayoutData
 
-enum class PaginationButtonRole { NEXT, PREVIOUS, BACK }
+/**
+ * INDICATOR is not clickable: it is a read-only "n/N" counter whose name and lore may use the
+ * `{page}`, `{total_pages}` and `{page_indicator}` tokens. It is only drawn when the layout has
+ * more than one page.
+ */
+enum class PaginationButtonRole { NEXT, PREVIOUS, BACK, INDICATOR }
 
 @Serializable
 data class PaginationButtonData(
@@ -873,9 +885,19 @@ private object CraftEngineResolvers {
     fun get(): Array<net.kyori.adventure.text.minimessage.tag.resolver.TagResolver> = resolvers
 }
 
+/**
+ * Parses a MiniMessage string with `<shift>`/`<image>` support.
+ *
+ * `<shift:N>` is always resolved internally
+ * ([btcrenaud.gui.resourcepack.font.GuiTagResolvers.shift]): it is a self-contained pixel offset
+ * backed by this extension's own Magic Digit font, so a compiled title keeps its alignment on a
+ * server that has no CraftEngine. When CraftEngine IS installed its own tags are added and take
+ * precedence, which keeps existing packs rendering exactly as before.
+ */
 private fun String.asMiniCE(): net.kyori.adventure.text.Component {
-    val resolvers = CraftEngineResolvers.get()
-    return if (resolvers.isNotEmpty()) asMiniWithResolvers(*resolvers) else asMini()
+    val ceResolvers = CraftEngineResolvers.get()
+    if (ceResolvers.isNotEmpty()) return asMiniWithResolvers(*ceResolvers)
+    return asMiniWithResolvers(btcrenaud.gui.resourcepack.font.GuiTagResolvers.shift())
 }
 
 /**

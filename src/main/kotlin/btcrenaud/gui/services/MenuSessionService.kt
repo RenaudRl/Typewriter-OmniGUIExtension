@@ -324,10 +324,17 @@ object MenuSessionService : Listener {
         // Resolve items and reactive state
         val rawSlots = session.definition.layout.getSlots(session, session.viewport)
         
+        // Read once per render rather than per slot: a menu can hold 54 of them.
+        val hideVanillaStats = com.typewritermc.core.entries.Query
+            .findWhere<btcrenaud.gui.GuiConfigEntry> { true }.firstOrNull()?.hideVanillaItemStats != false
+
         val slots = rawSlots.map { slot ->
-            if (slot is btcrenaud.gui.api.ReactiveSlot) {
+            val resolved = if (slot is btcrenaud.gui.api.ReactiveSlot) {
                 slot.resolveItem(player)
             } else slot
+            // Buttons are pictures, not objects: vanilla's damage/armour/durability lines break a
+            // carefully written lore. Slots the player can take from are left untouched.
+            if (hideVanillaStats) btcrenaud.gui.api.MenuItemTooltip.forSlot(resolved) else resolved
         }
 
         val physicalSlots = slots.mapNotNull { virtual ->

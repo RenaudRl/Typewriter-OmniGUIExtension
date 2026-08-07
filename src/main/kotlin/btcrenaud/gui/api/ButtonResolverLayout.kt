@@ -61,3 +61,50 @@ class GenericButtonResolverLayout(
         const val GUI_TAG_PREFIX = "dungeon_button:"
     }
 }
+
+/**
+ * Registry of button resolvers shared by ALL menus.
+ *
+ * An extension that builds its own screen wraps its layout in its own
+ * [GenericButtonResolverLayout]: its markers are then only resolved on THAT screen. The problem
+ * appears as soon as the same button is wanted in a generic `open_gui` menu — a shared Settings
+ * tab exposing another extension's toggle, for example: the resolver isn't installed there, the
+ * marker stays a dead item, and the setting has no visual feedback.
+ *
+ * An extension registers its prefix here once, from its initializer, and its markers become
+ * usable from any page.
+ *
+ * Resolvers that need per-screen state (open profession, open category, current island) stay
+ * local — this registry can't supply them that context. It is meant for markers whose data only
+ * depends on the player.
+ */
+object GlobalButtonResolvers {
+
+    private val resolvers = java.util.concurrent.ConcurrentHashMap<String,
+        (type: String, player: Player, slot: GuiSlot) -> GuiSlot?>()
+
+    /**
+     * Declares [resolver] for every marker whose tag starts with [prefix] (e.g. `"audio_button:"`).
+     * Re-registering the same prefix replaces the previous one, which makes the call safe on
+     * extension reload.
+     */
+    fun register(prefix: String, resolver: (type: String, player: Player, slot: GuiSlot) -> GuiSlot?) {
+        resolvers[prefix] = resolver
+    }
+
+    fun unregister(prefix: String) {
+        resolvers.remove(prefix)
+    }
+
+    fun prefixes(): Set<String> = resolvers.keys.toSet()
+
+    /**
+     * Wraps [layout] with one decorator per registered prefix.
+     *
+     * No resolver registered ⇒ the layout is returned unchanged, at no extra cost.
+     */
+    fun decorate(layout: MenuLayout): MenuLayout =
+        resolvers.entries.fold(layout) { acc, (prefix, resolver) ->
+            GenericButtonResolverLayout(inner = acc, prefix = prefix, resolver = resolver)
+        }
+}

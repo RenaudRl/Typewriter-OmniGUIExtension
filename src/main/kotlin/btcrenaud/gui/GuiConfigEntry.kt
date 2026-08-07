@@ -14,8 +14,8 @@ class GuiConfigEntry(
     override val id: String = "default",
     @Help("Enable debug logging for GUI internal commands, scroll events, and animations.")
     val debug: Boolean = false,
-    @Help("Enable the web-based GUI editor (Ktor HTTP :8082 + Socket.IO :9093).\nDisabled by default for security and performance.")
-    val editorEnabled: Boolean = false,
+    @Help("Hide vanilla tooltip lines (attack damage, armour, durability, enchantment lists…) on menu buttons.\nSlots the player can take from are never touched.")
+    val hideVanillaItemStats: Boolean = true,
 ) : ManifestEntry {
     override val name: String get() = "gui_config"
 }

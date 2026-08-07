@@ -1,6 +1,8 @@
 package btcrenaud.gui.api
 
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.TextDecoration
+import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.entity.Player
 import btcrenaud.gui.GuiType
 import btcrenaud.gui.InventorySize
@@ -134,12 +136,17 @@ class ScrollableLayout(
 
 /**
  * A layout that supports multiple discrete pages.
+ *
+ * Nav slots are dynamic by construction — [nextSlot]/[prevSlot] only appear when there is
+ * somewhere to go, and [indicatorSlot] only appears when there is more than one page, so no
+ * consumer has to hand-roll that bounds check for its own pagination.
  */
 class PaginatedLayout(
     val pages: List<List<GuiSlot>>,
     val nextSlot: GuiSlot? = null,
     val prevSlot: GuiSlot? = null,
     val backSlot: GuiSlot? = null,
+    val indicatorSlot: GuiSlot? = null,
     override val id: String? = null,
     override val virtualWidth: Int = 9,
     override val virtualHeight: Int = 6
@@ -151,8 +158,36 @@ class PaginatedLayout(
         if (currentPage > 0) prevSlot?.let { nav.add(it) }
         backSlot?.let { nav.add(it) }
         if (currentPage < pages.size - 1) nextSlot?.let { nav.add(it) }
+        if (pages.size > 1) indicatorSlot?.let { nav.add(it.withPageIndicator(currentPage, pages.size)) }
         return currentSlots + nav
     }
+}
+
+/**
+ * Rewrites `{page}`/`{total_pages}`/`{page_indicator}`/... tokens (see [PageIndicator]) on an
+ * already-built slot's display name and lore. The slot is built once at parse time like every
+ * other nav button; only the indicator needs its text refreshed per render, since the page count
+ * is only known once the menu is open. Substituting on the serialized MiniMessage string avoids
+ * threading raw templates through the whole parse pipeline.
+ */
+private fun GuiSlot.withPageIndicator(currentPageZeroIndexed: Int, totalPages: Int): GuiSlot {
+    val mm = MiniMessage.miniMessage()
+    val stack = item.clone()
+    val meta = stack.itemMeta ?: return this
+    meta.displayName()?.let { comp ->
+        val raw = mm.serialize(comp)
+        val replaced = PageIndicator.apply(raw, currentPageZeroIndexed, totalPages)
+        if (replaced != raw) meta.displayName(mm.deserialize(replaced).decoration(TextDecoration.ITALIC, false))
+    }
+    meta.lore()?.let { lore ->
+        val rawLines = lore.map { mm.serialize(it) }
+        val replacedLines = PageIndicator.apply(rawLines, currentPageZeroIndexed, totalPages)
+        if (replacedLines != rawLines) {
+            meta.lore(replacedLines.map { mm.deserialize(it).decoration(TextDecoration.ITALIC, false) })
+        }
+    }
+    stack.itemMeta = meta
+    return copy(item = stack)
 }
 
 /**

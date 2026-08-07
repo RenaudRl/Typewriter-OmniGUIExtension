@@ -99,6 +99,10 @@ object LayoutParser {
                             it.copy(commands = it.commands + "gui:back")
                         }
                     },
+                    indicatorSlot = data.navigationButtons.orEmpty().firstOrNull { it.role == PaginationButtonRole.INDICATOR }?.let { btn ->
+                        // No command is appended: the indicator only reports where the player is.
+                        btn.item.toSlot(player, context, guiType, storagePool = storagePool).firstOrNull()
+                    },
                     id = data.id
                 )
             }

@@ -74,8 +74,14 @@ class OpenGuiSchemaMigrationTest {
         publishedFile.writeText(legacyPage)
         stagingFile.writeText(legacyPage)
 
-        assertEquals(2, OpenGuiPageMigrator.migrate(root.toFile(), Logger.getAnonymousLogger()))
-        assertEquals(0, OpenGuiPageMigrator.migrate(root.toFile(), Logger.getAnonymousLogger()))
+        assertEquals(2, OpenGuiPageMigrator.migrateOnce(root.toFile(), Logger.getAnonymousLogger()))
+        // The marker makes the second start a no-op without reading a single page.
+        assertEquals(0, OpenGuiPageMigrator.migrateOnce(root.toFile(), Logger.getAnonymousLogger()))
+        val marker = root.resolve(".omnigui-schema-v2")
+        assertTrue(Files.isRegularFile(marker))
+        // Losing the marker must cost one extra scan, never a second conversion.
+        Files.delete(marker)
+        assertEquals(0, OpenGuiPageMigrator.migrateOnce(root.toFile(), Logger.getAnonymousLogger()))
 
         listOf(publishedFile, stagingFile).forEach { file ->
             val entry = JsonParser.parseString(Files.readString(file)).asJsonObject

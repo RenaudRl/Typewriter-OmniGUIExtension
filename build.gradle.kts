@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "btcrenaud"
-version = "0.10"
+version = "0.11"
 
 repositories {
     mavenCentral()
@@ -14,6 +14,9 @@ repositories {
 }
 
 dependencies {
+    // Provided at runtime by the PacketEvents plugin, which Typewriter itself requires.
+    // Used to read the held-item-change packet the client sends when the wheel is scrolled.
+    compileOnly("com.github.retrooper:packetevents-spigot:2.11.0")
     testImplementation(kotlin("test"))
     testImplementation("com.google.code.gson:gson:2.13.1")
 }
