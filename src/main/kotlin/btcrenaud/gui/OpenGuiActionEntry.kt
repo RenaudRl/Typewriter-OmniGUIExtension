@@ -86,6 +86,8 @@ class OpenGuiActionEntry(
     val breadcrumbSeparator: String = btcrenaud.gui.api.MenuViewSupport.DEFAULT_BREADCRUMB_SEPARATOR,
     @Help("Push the previous view onto the back stack when switching tabs.")
     val pushHistoryOnViewSwitch: Boolean = false,
+    @Help("When true, the player's own inventory (27 slots + 9 hotbar) is merged into the menu display. Purely visual — items stay in the real inventory. Only applicable to CUSTOM guiType with 6 rows.")
+    val extendToPlayerInventory: Boolean = false,
 ) : ActionEntry {
     override fun ActionTrigger.execute() {
         openFor(player, context, targetViewId = null, pushHistory = true)
@@ -236,7 +238,15 @@ class OpenGuiActionEntry(
             viewSwitcher = if (effectiveViews.isEmpty()) null else { switchedPlayer, viewId ->
                 openFor(switchedPlayer, context, viewId, pushHistoryOnViewSwitch)
             },
-        )
+        ).also {
+            // A menu whose resolved root is an `_extended` variant asks for the projection by its
+            // shape alone: the shell already reserves the four bottom rows, so requiring the flag
+            // as well would render those rows out of reach with no visible cause.
+            it.extendToPlayerInventory = guiType == GuiType.CUSTOM && (
+                extendToPlayerInventory ||
+                    btcrenaud.gui.api.MenuViewSupport.isExtendedRoot(effectiveMainLayoutId)
+            )
+        }
 
         btcrenaud.gui.services.MenuSessionService.register(
             player,
@@ -294,9 +304,9 @@ data class GuiItemData(
     val count: Int = 1,
     @Help("Direction in which to repeat this slot (right, left, down, up). Leave null for a single slot at (x, y).")
     val direction: Direction? = null,
-    @Help("Gap in slots between repeated items. A gap of 1 means adjacent slots.")
+    @Help("Step between two repeated slots, NOT a spacing: 1 = adjacent, 2 = one empty slot between each. Applies to both axes.")
     val gap: Int = 1,
-    @Help("How many times the whole repetition repeats in the secondary direction — a number of ROWS of slots, not a stack size.")
+    @Help("How many times the whole repetition repeats on the axis PERPENDICULAR to 'direction' — vertically for right/left, horizontally for down/up. A number of ROWS of slots, not a stack size.")
     val repeatY: Int = 1,
 ) {
     fun toSlot(
@@ -319,46 +329,21 @@ object GuiSlotBuilder {
     /**
      * Expands an item's repetition settings into the positions it occupies.
      *
-     * This is the canonical repetition semantics for the whole ecosystem — `gap` is a step
-     * multiplier (1 = adjacent), `count` repeats along [GuiItemData.direction] and `repeatY`
-     * adds rows perpendicular to it. Extensions that place their own markers (Shops'
-     * `SHOP_ITEM`, QuestCodex's `QUEST_SLOT`/`CATEGORY_SLOT`) MUST call this instead of
-     * reimplementing the maths: divergent copies are what made tagged markers refuse to spread.
-     *
-     * `count`/`repeatY` are coerced to at least 1 because the editor serializes an unset value
-     * as `0`, and `0 until 0` would silently drop the item entirely.
+     * The maths itself lives in [btcrenaud.gui.api.SlotRepetition] — the single owner shared
+     * with the editor validation, so the editor can never predict a placement the server does
+     * not draw. Extensions that place their own markers (Shops' `SHOP_ITEM`, QuestCodex's
+     * `QUEST_SLOT`/`CATEGORY_SLOT`) MUST call this instead of reimplementing the maths:
+     * divergent copies are what made tagged markers refuse to spread.
      */
-    fun expandPositions(data: GuiItemData): List<Pair<Int, Int>> {
-        // No direction = single position at (x, y), no repetition.
-        val direction = data.direction ?: return listOf(data.x to data.y)
-        val positions = mutableListOf<Pair<Int, Int>>()
-        for (ry in 0 until data.repeatY.coerceAtLeast(1)) {
-            for (rc in 0 until data.count.coerceAtLeast(1)) {
-                val px: Int
-                val py: Int
-                when (direction) {
-                    Direction.right -> {
-                        px = data.x + rc * data.gap  // rc shifts in x
-                        py = data.y + ry * data.gap  // ry shifts in y
-                    }
-                    Direction.left -> {
-                        px = data.x - rc * data.gap
-                        py = data.y + ry * data.gap
-                    }
-                    Direction.down -> {
-                        px = data.x + ry * data.gap  // ry shifts in x
-                        py = data.y + rc * data.gap  // rc shifts in y
-                    }
-                    Direction.up -> {
-                        px = data.x + ry * data.gap
-                        py = data.y - rc * data.gap
-                    }
-                }
-                positions.add(px to py)
-            }
-        }
-        return positions
-    }
+    fun expandPositions(data: GuiItemData): List<Pair<Int, Int>> =
+        btcrenaud.gui.api.SlotRepetition.expand(
+            x = data.x,
+            y = data.y,
+            direction = data.direction?.name,
+            count = data.count,
+            gap = data.gap,
+            repeatY = data.repeatY,
+        )
 
     fun build(
         player: Player,

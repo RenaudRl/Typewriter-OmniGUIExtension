@@ -138,7 +138,7 @@ object GuiFactory {
         }
 
         val target = arrayOfNulls<ItemStack>(inventory.size)
-        definition.slots.forEach { slot ->
+        drawableSlots(definition).forEach { slot ->
             val index = slot.y * 9 + slot.x
             if (index in 0 until inventory.size) target[index] = slot.item
         }
@@ -202,6 +202,14 @@ object GuiFactory {
         return create(holder).also { holder.backing = it }
     }
 
+    /**
+     * One slot per coordinate, with the same priority rule as the click path. Menus already go
+     * through [btcrenaud.gui.api.SlotOverlay] on the session side; this net covers callers that
+     * build a [GuiDefinition] by hand. Already logged upstream, hence no logger here.
+     */
+    private fun drawableSlots(definition: GuiDefinition): List<btcrenaud.gui.api.GuiSlot> =
+        btcrenaud.gui.api.SlotOverlay.collapse(definition.slots, menuId = null, logger = null)
+
     private fun applySlots(inventory: Inventory, definition: GuiDefinition) {
         // Clear inventory before applying new slots to avoid ghost items
         when (inventory.type) {
@@ -221,7 +229,7 @@ object GuiFactory {
             }
         }
 
-        definition.slots.forEach { slot ->
+        drawableSlots(definition).forEach { slot ->
             val index = slot.y * 9 + slot.x
             when (inventory) {
                 is org.bukkit.inventory.GrindstoneInventory -> {

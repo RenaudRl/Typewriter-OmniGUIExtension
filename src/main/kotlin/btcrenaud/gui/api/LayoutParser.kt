@@ -9,17 +9,66 @@ import com.typewritermc.engine.paper.utils.asMini
 
 object LayoutParser {
 
+    private val LOGGER = java.util.logging.Logger.getLogger("Typewriter-OmniGUIExtension")
+
+    /** Rejections already reported ("layout@x,y"), so a re-render does not repeat them. */
+    private val reportedRejections: MutableSet<String> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    private const val MAX_REPORTED_REJECTIONS = 2048
+
+    /**
+     * Builds the slots of an item list, then drops those falling outside the grid.
+     *
+     * Height is NOT bounded from above here: a layout reached through a `scrollable` lives in a
+     * virtual space taller than the inventory, and the render pass does the final clipping. Only
+     * impossible positions (negative x/y, x past the width) are dropped — and they are now
+     * logged: an oversized `count` used to throw its extra slots away without a word.
+     */
     fun buildSlots(
-        player: Player, 
-        context: InteractionContext, 
-        guiType: GuiType, 
-        totalSize: Int, 
-        data: List<GuiItemData>, 
+        player: Player,
+        context: InteractionContext,
+        guiType: GuiType,
+        totalSize: Int,
+        data: List<GuiItemData>,
         width: Int = 9,
         storagePool: Map<String, StorageSlotData> = emptyMap(),
+        layoutId: String = "",
     ): List<GuiSlot> {
         val base = data.flatMap { it.toSlot(player, context, guiType, width, storagePool) }
-        return base.filter { slot -> slot.x >= 0 && slot.y >= 0 && slot.x < width && slot.y >= 0 }
+        val kept = ArrayList<GuiSlot>(base.size)
+        var rejected = 0
+        for (slot in base) {
+            if (slot.x in 0 until width && slot.y >= 0) {
+                kept += slot
+            } else {
+                rejected++
+                reportRejection(layoutId, slot.x, slot.y, width)
+            }
+        }
+        if (rejected > 0) reportRejectionSummary(layoutId, rejected, base.size, width)
+        return kept
+    }
+
+    private fun reportRejection(layoutId: String, x: Int, y: Int, width: Int) {
+        if (reportedRejections.size >= MAX_REPORTED_REJECTIONS) return
+        val layout = layoutId.ifBlank { "<unnamed>" }
+        if (!reportedRejections.add("$layout@$x,$y")) return
+        LOGGER.warning(
+            "[OmniGUI] Layout '$layout': slot at (x=$x, y=$y) falls outside the grid " +
+                "(width $width, x and y must be >= 0) and was dropped. Repetition settings " +
+                "(count/gap/repeatY) count SLOTS, not stack size."
+        )
+    }
+
+    private fun reportRejectionSummary(layoutId: String, rejected: Int, total: Int, width: Int) {
+        if (reportedRejections.size >= MAX_REPORTED_REJECTIONS) return
+        val layout = layoutId.ifBlank { "<unnamed>" }
+        if (!reportedRejections.add("$layout#summary")) return
+        LOGGER.warning(
+            "[OmniGUI] Layout '$layout': $rejected of $total slots dropped for falling outside " +
+                "the ${width}-wide grid."
+        )
     }
 
     fun parse(
@@ -43,11 +92,11 @@ object LayoutParser {
         visited.add(layoutKey)
         val result = when (data) {
             is SimpleLayoutData -> SimpleLayout(
-                slots = buildSlots(player, context, guiType, totalSize, data.items, width, storagePool),
+                slots = buildSlots(player, context, guiType, totalSize, data.items, width, storagePool, data.id),
                 id = data.id
             )
             is FlexLayoutData -> FlexLayout(
-                slots = buildSlots(player, context, guiType, totalSize, data.items, width, storagePool),
+                slots = buildSlots(player, context, guiType, totalSize, data.items, width, storagePool, data.id),
                 justifyContent = data.justifyContent,
                 alignItems = data.alignItems,
                 wrap = data.wrap,

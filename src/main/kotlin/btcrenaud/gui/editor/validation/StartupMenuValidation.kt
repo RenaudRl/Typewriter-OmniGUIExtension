@@ -110,15 +110,25 @@ object StartupMenuValidation {
         if (hidden > 0) logger.severe("[GUI] $menu — and $hidden other error(s) not shown.")
     }
 
+    /** Past this many, a menu's warnings are summarized to their codes. */
+    private const val MAX_WARNING_LINES_PER_MENU = 3
+
     /**
-     * Warnings get one line per menu, naming their codes and nothing more.
+     * Few warnings: each one spelled out. Many: a single line of codes.
      *
-     * They flag authoring choices that still render — an unreferenced layout, a view that leaves a
-     * frame empty — so spelling each one out at every boot costs more attention than it returns.
-     * The codes are enough to tell whether the line deserves a look.
+     * A lone warning had no reason to be summarized — "1 warning(s): slot.overlapsFill" forces
+     * you to reopen the page to learn WHAT the validator saw, when the message fits on the same
+     * line. Summarizing only earns its keep against volume, where spelling everything out would
+     * bury the rest of the console.
      */
     private fun summarizeWarnings(warnings: List<MenuValidationService.Issue>, menu: String, logger: Logger) {
         if (warnings.isEmpty()) return
+        if (warnings.size <= MAX_WARNING_LINES_PER_MENU) {
+            warnings.forEach { issue ->
+                logger.warning("[GUI] $menu — ${issue.code} at ${issue.path}: ${issue.message}")
+            }
+            return
+        }
         val codes = warnings.map { it.code }.distinct().sorted()
         logger.warning(
             "[GUI] $menu — ${warnings.size} warning(s): ${codes.joinToString(", ")}.",

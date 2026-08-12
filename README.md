@@ -79,6 +79,46 @@ Create an `open_gui` entry in your Typewriter page:
 | **Book** | Written book with MiniMessage pages | Lore, guides |
 | **Merchant** | Villager trades with custom items | Shops |
 
+## Slot repetition
+
+Any item can place several slots at once instead of being copy-pasted:
+
+```json
+{ "x": 0, "y": 0, "count": 9, "direction": "right",
+  "item": { "material": "GRAY_STAINED_GLASS_PANE" }, "displayName": " " }
+```
+
+| Field | Meaning |
+|:---|:---|
+| `direction` | `right`, `left`, `down`, `up` — **required**; without it `count`, `gap` and `repeatY` are ignored and a single slot is placed |
+| `count` | Number of slots along `direction` |
+| `gap` | **Step**, not a spacing: `1` = adjacent (default), `2` = one empty slot between each. Applies to both axes |
+| `repeatY` | Repeats the whole line on the axis **perpendicular** to `direction` — downwards for `right`/`left`, to the right for `down`/`up` |
+
+Slots landing outside the grid are dropped and reported in the server console with the
+layout id and the rejected coordinates. The editor warns when `count`/`gap`/`repeatY`
+are set without a `direction`, and errors on an unknown `direction` value.
+
+## Extended inventory
+
+Set `extendToPlayerInventory` on an `open_gui` entry to turn the player's own 36 slots into four
+extra menu rows, giving a 10-row canvas (`y` 0..9) instead of 6.
+
+```json
+{ "type": "open_gui", "guiType": "CUSTOM", "extendToPlayerInventory": true }
+```
+
+The projection is **client-side only**: the real inventory is never written to, and its contents
+are restored the moment the menu closes. Clicks in the bottom band are treated as menu controls —
+items can never be picked up there, whatever `allowPickup` says.
+
+Requirements and caveats:
+
+- `guiType` must be `CUSTOM`, with a 6-row (54-slot) size — the projected rows are added on top.
+- PacketEvents must be present at runtime (Typewriter already requires it).
+- A root layout whose id ends with `_extended` enables this on its own, so a shared shell can ship
+  a normal and an extended variant without every menu repeating the flag.
+
 ## Storage
 
 ```json

@@ -3,6 +3,8 @@ package btcrenaud.gui.services
 import btcrenaud.gui.api.*
 import btcrenaud.gui.GuiFactory
 import btcrenaud.gui.InventorySize
+import btcrenaud.gui.inventory.ExtendedInventoryPacketService
+import btcrenaud.gui.inventory.SplitWindowManager
 import net.kyori.adventure.text.Component
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
@@ -166,6 +168,13 @@ object MenuSessionService : Listener {
         val openEvent = btcrenaud.gui.api.GuiOpenEvent(player, definition)
         if (!openEvent.callEvent()) return
 
+        // A transition from an extended projection to a normal GUI must release the packet bridge
+        // immediately. Otherwise a stale tag keeps real inventory packets rewritten and the next
+        // menu inherits the previous bottom projection.
+        if (!definition.extendToPlayerInventory && SplitWindowManager.isExtended(player)) {
+            endExtendedProjection(player)
+        }
+
         val current = activeSessions[player.uniqueId]
         current?.refreshTask?.cancel()
 
@@ -182,7 +191,10 @@ object MenuSessionService : Listener {
             btcrenaud.gui.api.GuiCloseEvent(player, current.definition).callEvent()
         }
 
-        val rows = (definition.size?.slots ?: 54) / 9
+        // Ten rows: the six of the chest window plus the four projected onto the player's own
+        // inventory. The viewport has to cover them, or layouts would clip at row six and the
+        // projected band would never receive a slot.
+        val rows = if (definition.extendToPlayerInventory) 10 else (definition.size?.slots ?: 54) / 9
         val session = ActiveSession(player, definition, Viewport(width = 9, height = rows))
         session.isTransitioning = true // Flag to ignore close events during this transition
         
@@ -328,7 +340,15 @@ object MenuSessionService : Listener {
         val hideVanillaStats = com.typewritermc.core.entries.Query
             .findWhere<btcrenaud.gui.GuiConfigEntry> { true }.firstOrNull()?.hideVanillaItemStats != false
 
-        val slots = rawSlots.map { slot ->
+        // Overlap resolved BEFORE any transformation, by the very code onClick uses: both
+        // paths see exactly the same winner at every coordinate. See SlotOverlay.
+        val visible = btcrenaud.gui.api.SlotOverlay.collapse(
+            rawSlots,
+            session.definition.id,
+            plugin.logger,
+        )
+
+        val slots = visible.map { slot ->
             val resolved = if (slot is btcrenaud.gui.api.ReactiveSlot) {
                 slot.resolveItem(player)
             } else slot
@@ -369,7 +389,11 @@ object MenuSessionService : Listener {
                 baseIndex
             }
 
-            val inventorySize = session.definition.size?.slots ?: 54
+            val inventorySize = if (session.definition.extendToPlayerInventory) {
+                SplitWindowManager.EXTENDED_SLOT_COUNT
+            } else {
+                session.definition.size?.slots ?: SplitWindowManager.TOP_SLOT_COUNT
+            }
             if (index !in 0 until inventorySize) return@mapNotNull null
             
             index to (virtual to (finalX to finalY))
@@ -423,6 +447,40 @@ object MenuSessionService : Listener {
         if (needsUpdate) {
             val newItems = guiDef.slots.associate { (it.y * 9 + it.x) to it.item }
             val top = player.openInventory.topInventory
+
+            // ── Extended view: standard 54-slot window + controlled bottom band via SET_SLOT ──
+            if (session.definition.extendToPlayerInventory) {
+                // Activate the packet projection BEFORE the window opens: the first WINDOW_ITEMS
+                // snapshot must already carry the menu-designed bottom rows, otherwise the player
+                // sees their real items flash through.
+                SplitWindowManager.markExtended(player)
+                ExtendedInventoryPacketService.activate(player, newItems)
+
+                val topDef = guiDef.copy(
+                    type = btcrenaud.gui.GuiType.CUSTOM,
+                    size = InventorySize.SIZE_54,
+                    slots = guiDef.slots.filter {
+                        (it.y * 9 + it.x) < SplitWindowManager.TOP_SLOT_COUNT
+                    },
+                )
+                GuiFactory.update(player, topDef) { inventory ->
+                    if (activeSessions[player.uniqueId] === session) {
+                        session.currentInventory = inventory
+                        session.isTransitioning = false
+                        ExtendedInventoryPacketService.sendCurrentProjection(player)
+                        // GuiFactory queues the actual OPEN_WINDOW packet on the player's
+                        // scheduler. The immediate projection can therefore still target the
+                        // previous container id; resend once the new window has been opened.
+                        player.scheduler.runDelayed(plugin, { _ ->
+                            if (activeSessions[player.uniqueId] === session) {
+                                ExtendedInventoryPacketService.sendCurrentProjection(player)
+                            }
+                        }, null, 2L)
+                    }
+                }
+                session.lastSlots = newItems
+                return
+            }
             val sameInventory = session.currentInventory != null &&
                 session.currentInventory === top &&
                 (top.type == session.definition.type.inventoryType ||
@@ -485,9 +543,13 @@ object MenuSessionService : Listener {
         }
 
         
-        // Handle clicks in bottom inventory (Shift-Clicking or Hotbar Swapping)
-        if (event.clickedInventory == event.view.bottomInventory) {
-            if (event.click == org.bukkit.event.inventory.ClickType.SHIFT_LEFT || 
+        // Handle clicks in bottom inventory (Shift-Clicking or Hotbar Swapping).
+        // On an extended menu the bottom rows are menu surface, not the player's inventory, so
+        // their clicks continue into the normal slot resolution below.
+        val isExtendedBottomClick = session.definition.extendToPlayerInventory &&
+            event.clickedInventory == event.view.bottomInventory
+        if (event.clickedInventory == event.view.bottomInventory && !isExtendedBottomClick) {
+            if (event.click == org.bukkit.event.inventory.ClickType.SHIFT_LEFT ||
                 event.click == org.bukkit.event.inventory.ClickType.SHIFT_RIGHT ||
                 event.click == org.bukkit.event.inventory.ClickType.NUMBER_KEY) {
                 event.isCancelled = true
@@ -495,7 +557,7 @@ object MenuSessionService : Listener {
             return
         }
 
-        if (event.clickedInventory != event.view.topInventory) return
+        if (!isExtendedBottomClick && event.clickedInventory != event.view.topInventory) return
 
         // For vanilla containers (Anvil, Enchanting Table, Grindstone, etc.) with no custom
         // layout (EmptyLayout), let vanilla handle all clicks normally. The plugin only
@@ -504,8 +566,30 @@ object MenuSessionService : Listener {
             return
         }
 
-        val relSlot = event.slot
-        val slots = session.definition.layout.getSlots(session, session.viewport)
+        // For the bottom inventory, Bukkit's local slot index follows the player's inventory
+        // layout (hotbar 0..8, main inventory 9..35), while the GUI projection is addressed by
+        // the raw container slot. Keep the raw slot so bottom-band controls resolve to the same
+        // physical coordinates render() used.
+        val relSlot = if (isExtendedBottomClick) event.rawSlot else event.slot
+
+        if (isExtendedBottomClick) {
+            // The client predicts a removal before Bukkit's cancellation reaches it. Restore this
+            // projected slot on the next player tick, after any outgoing click response; this
+            // also covers inert buttons that intentionally carry no command or trigger.
+            player.scheduler.runDelayed(plugin, { _ ->
+                if (activeSessions[player.uniqueId] === session) {
+                    ExtendedInventoryPacketService.sendProjectionSlot(player, relSlot)
+                }
+            }, null, 1L)
+        }
+
+        // Same overlap resolution as render(): the slot reachable by a click is, by
+        // construction, the one that was drawn. See SlotOverlay.
+        val slots = btcrenaud.gui.api.SlotOverlay.collapse(
+            session.definition.layout.getSlots(session, session.viewport),
+            session.definition.id,
+            plugin.logger,
+        )
         val relX = relSlot % 9
         val relY = relSlot / 9
         val virtualX = relX + session.viewport.x
@@ -546,7 +630,11 @@ object MenuSessionService : Listener {
 
         // Ghost slots are display-only buttons: they can be interacted with, but their item
         // must never be copied to the cursor or moved out of the menu.
-        event.isCancelled = clickedSlot?.isGhost == true || clickedSlot?.allowPickup != true
+        // The bottom band is never a real player inventory while an extended menu is open: its
+        // clicks are controls only, and letting Bukkit pick an item up there would expose or
+        // mutate the actual inventory hidden behind the projection.
+        event.isCancelled = isExtendedBottomClick ||
+            clickedSlot?.isGhost == true || clickedSlot?.allowPickup != true
 
         // Determine Interaction Type
         val interaction = if (event.click == org.bukkit.event.inventory.ClickType.NUMBER_KEY) {
@@ -1048,6 +1136,27 @@ object MenuSessionService : Listener {
         } else if (isBookGui) {
             // Books don't have an inventory type that fires a reliable close event with a specific type,
             // but we can let it pass or check if there's a better way. For now, allow it to close.
+        } else if (session.definition.extendToPlayerInventory) {
+            // A transition can close the previous Bukkit view after the new session has already
+            // been installed. Only the inventory owned by this session may tear it down;
+            // otherwise a stale close event leaves the new menu without protection.
+            if (session.currentInventory == null || event.inventory !== session.currentInventory) {
+                if (!isGuiInventory(event.inventory)) {
+                    activeSessions.remove(player.uniqueId)
+                    session.refreshTask?.cancel()
+                    endExtendedProjection(player)
+                }
+                return
+            }
+            // The top window is a plain 54-slot container here; clearing it would be pointless,
+            // and the bottom band never held real items to give back.
+            processTemporaryStorageSlots(player, session)
+            activeSessions.remove(player.uniqueId)
+            session.refreshTask?.cancel()
+            endExtendedProjection(player)
+            playSound(player, session.definition.audio.onClose, context())
+            btcrenaud.gui.api.GuiCloseEvent(player, session.definition).callEvent()
+            return
         } else {
             // For normal GUIs, require strict reference equality.
             if (session.currentInventory == null || event.inventory != session.currentInventory) {
@@ -1090,6 +1199,25 @@ object MenuSessionService : Listener {
     }
 
     /**
+     * Tears the client-side bottom projection down and gives the player their real view back.
+     *
+     * Deactivating the packet bridge is not enough: the projection was written into the CLIENT's
+     * own player-inventory storage through raw slots 54..89 of the chest window. Once that window
+     * closes, the client keeps displaying the projected buttons in place of the real items until
+     * something re-sends the truth. The server inventory was never touched — the loss is purely
+     * visual, but indistinguishable from a wipe for the player.
+     *
+     * Order matters: deactivate FIRST so the listener no longer rewrites the outgoing snapshot,
+     * then resend the real contents one tick later, when the client has processed the close and
+     * window 0 is authoritative again.
+     */
+    private fun endExtendedProjection(player: Player) {
+        ExtendedInventoryPacketService.deactivate(player)
+        SplitWindowManager.unmarkExtended(player)
+        player.scheduler.runDelayed(plugin, { _ -> player.updateInventory() }, null, 1L)
+    }
+
+    /**
      * Returns the trade input items (slots 0-1) to the player and clears the
      * merchant inventory BEFORE vanilla processes the close — otherwise vanilla
      * would return them a second time (duplication bug).
@@ -1121,6 +1249,13 @@ object MenuSessionService : Listener {
         val session = activeSessions.remove(event.player.uniqueId) ?: return
         session.refreshTask?.cancel()
 
+        // Release the projection for extended menus. No packet is sent to a leaving player:
+        // dropping the state and the tag is what matters, so a reconnect starts clean.
+        if (session.definition.extendToPlayerInventory) {
+            ExtendedInventoryPacketService.deactivate(event.player)
+            SplitWindowManager.unmarkExtended(event.player)
+        }
+
         // Mirror onClose safeguards for disconnects mid-session.
         val guiType = session.definition.type
         if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE || guiType == btcrenaud.gui.GuiType.MERCHANT) {
@@ -1133,7 +1268,14 @@ object MenuSessionService : Listener {
         activeSessions.values.forEach { it.refreshTask?.cancel() }
         activeSessions.keys.forEach { uuid ->
             val player = Bukkit.getPlayer(uuid)
-            if (player != null) safeCloseInventory(player)
+            if (player != null) {
+                ExtendedInventoryPacketService.deactivate(player)
+                SplitWindowManager.unmarkExtended(player)
+                safeCloseInventory(player)
+                // No scheduler is available while the plugin is disabling; the close above has
+                // already taken effect, so the truth can be resent inline.
+                player.updateInventory()
+            }
         }
         activeSessions.clear()
         org.bukkit.event.HandlerList.unregisterAll(this)

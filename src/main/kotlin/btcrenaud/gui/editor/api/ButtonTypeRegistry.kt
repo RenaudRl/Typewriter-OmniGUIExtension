@@ -48,11 +48,27 @@ object ButtonTypeRegistry {
         // Indexed markers ("QUEST_SLOT#3") and parameterised types ("DIMENSION:skills")
         // match on their base type id.
         val baseType = buttonType.substringBefore('#').substringBefore(':')
-        return applicable.any { contribution ->
-            if (buttonPrefix != null && contribution.prefix != buttonPrefix) return@any false
+
+        // A type can only be called UNKNOWN when its NAMESPACE is itself known.
+        //
+        // Declaring button types stays optional: plenty of extensions resolve their markers
+        // without ever registering anything here. Judging a type on the mere presence of other
+        // contributions condemned everything nobody had bothered to describe — hundreds of
+        // perfectly working slots reported on every startup. The answerable question is narrower:
+        // "this prefix belongs to an extension that described its types — is this one among them?"
+        if (buttonPrefix != null) {
+            val owners = applicable.filter { it.prefix == buttonPrefix }
+            if (owners.isEmpty()) return null
             // Free-form namespaces (config-driven ids, e.g. btcsky_tab:) accept any id.
+            return owners.any { it.freeForm || it.types.any { type -> type.id == baseType } }
+        }
+
+        // With no prefix the type cannot be attributed to any extension: a match can be
+        // confirmed, an absence can never be concluded.
+        val matched = applicable.any { contribution ->
             contribution.freeForm || contribution.types.any { it.id == baseType }
         }
+        return if (matched) true else null
     }
 }
 

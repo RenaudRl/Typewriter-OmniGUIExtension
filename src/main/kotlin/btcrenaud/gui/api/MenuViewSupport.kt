@@ -57,6 +57,38 @@ object MenuViewSupport {
     /** Slot tag prefix that turns a slot into a view tab. */
     const val VIEW_TAB_PREFIX = "view:"
 
+    /** Suffix marking the ten-row projection of a root layout. */
+    private const val EXTENDED_SUFFIX = "_extended"
+
+    /**
+     * Promotes a root layout to its ten-row variant when the resolved pool provides one.
+     *
+     * The extended projection is chosen from the pool rather than from a hard-coded id, so a menu
+     * that declares its own shell (`codex_root`, `shop_root`, …) gets its extended variant exactly
+     * like a menu inheriting the shared one. Matching a literal `"shell_root_extended"` instead
+     * loses the bottom band — and every control placed in it — as soon as a root is renamed.
+     *
+     * @param requestedRootId the root id resolved by [inherit]; blank or null is returned as is.
+     */
+    fun extendedRootLayoutId(inherited: InheritedMenu, requestedRootId: String?): String? {
+        val requested = requestedRootId?.takeIf { it.isNotBlank() } ?: return requestedRootId
+        inherited.pool.keys.firstOrNull { it == "${requested}$EXTENDED_SUFFIX" }?.let { return it }
+        // Fallback: an id absent from the resolved pool must not yield an empty menu. Rendering
+        // the inherited shell beats rendering nothing at all.
+        if (!inherited.pool.containsKey(requested)) {
+            inherited.pool.keys.firstOrNull { it == "shell_root$EXTENDED_SUFFIX" }?.let { return it }
+            if (inherited.pool.containsKey("shell_root")) return "shell_root"
+        }
+        return requested
+    }
+
+    /**
+     * Whether [rootLayoutId] designates an extended projection — the test to use before setting
+     * `extendToPlayerInventory`, rather than comparing to a literal layout id.
+     */
+    fun isExtendedRoot(rootLayoutId: String?): Boolean =
+        rootLayoutId != null && rootLayoutId.endsWith(EXTENDED_SUFFIX)
+
     /**
      * Resolves the active view, its layout tree and its title.
      *
@@ -229,7 +261,12 @@ object MenuViewSupport {
         return InheritedMenu(
             pool = pool,
             views = views,
-            mainLayoutId = ownMainLayoutId ?: chain.firstNotNullOfOrNull { it.mainLayoutId },
+            // `takeIf { isNotBlank() }` as for defaultViewId below: a menu that inherits its whole
+            // chassis leaves this field empty. Without the filter the empty string outranked the
+            // inheritance, no pool layout answered that id, and the menu rendered EMPTY — so no
+            // button existed to receive the click.
+            mainLayoutId = ownMainLayoutId?.takeIf { it.isNotBlank() }
+                ?: chain.firstNotNullOfOrNull { it.mainLayoutId?.takeIf { id -> id.isNotBlank() } },
             defaultViewId = ownDefaultViewId?.takeIf { it.isNotBlank() }
                 ?: chain.firstNotNullOfOrNull { it.defaultViewId?.takeIf { id -> id.isNotBlank() } },
             size = chain.firstNotNullOfOrNull { it.size },

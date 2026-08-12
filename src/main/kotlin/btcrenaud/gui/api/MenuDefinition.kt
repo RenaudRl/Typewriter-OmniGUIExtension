@@ -34,7 +34,17 @@ data class MenuDefinition(
     val breadcrumb: List<String> = emptyList(),
     @Transient
     val viewSwitcher: ((Player, String) -> Unit)? = null
-)
+) {
+    /**
+     * Renders the player's own 36 slots as four extra menu rows.
+     *
+     * Purely visual: the projection is client-side only (see
+     * [btcrenaud.gui.inventory.ExtendedInventoryPacketService]) and the real inventory is never
+     * written to. Set after construction rather than as a constructor parameter because the
+     * decision depends on the resolved root layout, which is only known once inheritance has run.
+     */
+    var extendToPlayerInventory: Boolean = false
+}
 
 data class MenuAudioConfig(
     @Help("Sound played when the GUI is opened.")
