@@ -111,7 +111,18 @@ object MenuSessionService : Listener {
         /** State forced via `gui:state <id>` — overrides condition evaluation until cleared. */
         var forcedStateId: String? = null,
         /** Periodic re-render task when the entry sets autoRefreshTicks > 0. */
-        var refreshTask: io.papermc.paper.threadedregions.scheduler.ScheduledTask? = null
+        var refreshTask: io.papermc.paper.threadedregions.scheduler.ScheduledTask? = null,
+        /**
+         * A window open has been scheduled on the player scheduler and has not completed yet.
+         * GuiFactory.open() runs a tick later, so until then `player.openInventory.topInventory`
+         * is still the previous view and every render would decide to reopen again. The second
+         * open closes the first window, and that close reaches onClose as a genuine close and
+         * destroys this very session while its menu stays on screen — every button then dead.
+         * One open in flight at a time.
+         */
+        var openPending: Boolean = false,
+        /** A render was requested while [openPending]; replay it once the window exists. */
+        var renderQueuedWhilePending: Boolean = false
     )
 
     /**
@@ -351,7 +362,12 @@ object MenuSessionService : Listener {
         val slots = visible.map { slot ->
             val resolved = if (slot is btcrenaud.gui.api.ReactiveSlot) {
                 slot.resolveItem(player)
-            } else slot
+            } else {
+                // Re-evaluate the author's item, name and lore. Without this a placeholder or a
+                // countdown in a lore is resolved once at parse time and then frozen, which made
+                // autoRefreshTicks re-draw an identical inventory forever.
+                slot.itemProvider?.let { provider -> slot.copy(item = provider(player)) } ?: slot
+            }
             // Buttons are pictures, not objects: vanilla's damage/armour/durability lines break a
             // carefully written lore. Slots the player can take from are left untouched.
             if (hideVanillaStats) btcrenaud.gui.api.MenuItemTooltip.forSlot(resolved) else resolved
@@ -463,10 +479,24 @@ object MenuSessionService : Listener {
                         (it.y * 9 + it.x) < SplitWindowManager.TOP_SLOT_COUNT
                     },
                 )
+                if (session.openPending) {
+                    // An open is already in flight; issuing another one closes the first window,
+                    // and that close is read as a genuine close and destroys the session.
+                    session.renderQueuedWhilePending = true
+                    session.lastSlots = newItems
+                    return
+                }
+                session.openPending = true
                 GuiFactory.update(player, topDef) { inventory ->
+                    session.openPending = false
                     if (activeSessions[player.uniqueId] === session) {
                         session.currentInventory = inventory
                         session.isTransitioning = false
+                        if (session.renderQueuedWhilePending) {
+                            session.renderQueuedWhilePending = false
+                            render(player, session)
+                            return@update
+                        }
                         ExtendedInventoryPacketService.sendCurrentProjection(player)
                         // GuiFactory queues the actual OPEN_WINDOW packet on the player's
                         // scheduler. The immediate projection can therefore still target the
@@ -503,10 +533,23 @@ object MenuSessionService : Listener {
                 // previous menu's InventoryCloseEvent BEFORE the open completes, so the session
                 // must stay transitioning until then — adopting the old top inventory here made
                 // onClose treat that swap-close as a real close and kill the fresh session.
+                if (session.openPending) {
+                    // An open is already in flight; issuing another one closes the first window,
+                    // and that close is read as a genuine close and destroys the session.
+                    session.renderQueuedWhilePending = true
+                    session.lastSlots = newItems
+                    return
+                }
+                session.openPending = true
                 GuiFactory.update(player, guiDef) { inventory ->
+                    session.openPending = false
                     if (activeSessions[player.uniqueId] === session) {
                         session.currentInventory = inventory
                         session.isTransitioning = false
+                        if (session.renderQueuedWhilePending) {
+                            session.renderQueuedWhilePending = false
+                            render(player, session)
+                        }
                     }
                 }
             }

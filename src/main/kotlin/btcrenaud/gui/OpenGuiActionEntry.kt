@@ -381,6 +381,21 @@ object GuiSlotBuilder {
                 stack.itemMeta = meta
             }
             val prefix = data.buttonPrefix ?: "dungeon_button:"
+            // The author's own interactions travel WITH the marker. A resolver that claims the tag
+            // overwrites them (`slot.copy(interactions = ...)`), so nothing changes for a resolved
+            // button; but when NO resolver claims the tag — wrong prefix, wrong case, extension not
+            // installed on this screen — GenericButtonResolverLayout leaves the slot as-is, and the
+            // slot must then still do what the author configured. Dropping them here turned every
+            // mistyped buttonType into a dead item that clicks in silence, with no console error.
+            val taggedInteractions = data.interactionList.associate { interactionData ->
+                val cmds = interactionData.commands.map { it.get(player, context).parsePlaceholders(player) }.toMutableList()
+                if (interactionData.closeMenu) cmds.add("gui:close")
+                if (interactionData.executeReturn) cmds.add("gui:back")
+                interactionData.type to btcrenaud.gui.api.GuiSlotInteraction(
+                    commands = cmds.toList(),
+                    triggers = interactionData.triggers
+                )
+            }
             return listOf(btcrenaud.gui.api.GuiSlot(
                 x = data.x,
                 y = data.y,
@@ -388,26 +403,36 @@ object GuiSlotBuilder {
                 allowPickup = false,
                 tag = "$prefix$effectiveButtonType",
                 triggers = data.triggers,
-                modifiers = data.modifiers
+                modifiers = data.modifiers,
+                interactions = if (canClick) taggedInteractions else emptyMap(),
+                input = if (canClick) data.input else null,
+                cooldownTicks = data.cooldownTicks,
             ))
         }
         
-        val resolved = data.item.get(player, context)
-        val stack = if (resolved == Item.Empty) {
-            player.inventory.itemInMainHand.clone()
-        } else {
-            resolved.build(player, context)
-        }
-        val meta = stack.itemMeta
-        if (meta != null) {
-            data.displayName?.get(player, context)?.let {
-                meta.displayName(it.parsePlaceholders(player).asMiniItem())
+        // Kept as a function so a live menu can run it again on every render: the parsed layout
+        // holds one immutable slot list, so a name or lore built only here would never change.
+        fun buildStack(target: Player): org.bukkit.inventory.ItemStack {
+            val resolved = data.item.get(target, context)
+            val stack = if (resolved == Item.Empty) {
+                target.inventory.itemInMainHand.clone()
+            } else {
+                resolved.build(target, context)
             }
-            data.lore.map { it.get(player, context).parsePlaceholders(player).asMiniItem() }
-                .takeIf { it.isNotEmpty() }
-                ?.let { meta.lore(it) }
-            stack.itemMeta = meta
+            val meta = stack.itemMeta
+            if (meta != null) {
+                data.displayName?.get(target, context)?.let {
+                    meta.displayName(it.parsePlaceholders(target).asMiniItem())
+                }
+                data.lore.map { it.get(target, context).parsePlaceholders(target).asMiniItem() }
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { meta.lore(it) }
+                stack.itemMeta = meta
+            }
+            return stack
         }
+
+        val stack = buildStack(player)
 
         val allInteractions = data.interactionList.associate { interactionData ->
             val cmds = interactionData.commands.map { it.get(player, context).parsePlaceholders(player) }.toMutableList()
@@ -432,10 +457,22 @@ object GuiSlotBuilder {
                 isGhost = data.isGhost && canClick,
                 interactions = if (canClick) allInteractions else emptyMap(),
                 input = if (canClick) data.input else null,
-                animation = data.animation?.let { anim ->
+                // The panel stamps a default animation block on every slot, so a decorative item arrives
+                // here carrying targetX/targetY = 0 and duration = 0. That is not an animation:
+                // with duration 0 the progress ratio is +Inf, clamps to 1.0, and the slot is drawn
+                // at its target — every such slot collapsing onto index 0 — while also scheduling a
+                // re-render that races the pending window open and kills the session. Treat a
+                // non-positive duration as "no animation" so the slot keeps its own position.
+                animation = data.animation?.takeIf { it.duration > 0 }?.let { anim ->
                     btcrenaud.gui.api.SlotAnimation(anim.targetX, anim.targetY, anim.duration, anim.easing)
                 },
-                cooldownTicks = data.cooldownTicks
+                cooldownTicks = data.cooldownTicks,
+                // Only slots whose text can actually change carry the cost of a rebuild. Tagged
+                // buttons are deliberately excluded (they never reach here): a resolver replaces
+                // their item, and re-running the author's build would overwrite what it injected.
+                itemProvider = if (data.displayName != null || data.lore.isNotEmpty()) {
+                    { target -> buildStack(target) }
+                } else null,
             )
             val storage = data.storageId?.let(storagePool::get)
             if (storage != null) {
@@ -471,7 +508,13 @@ object GuiSlotBuilder {
                     interactions = allInteractions,
                     input = data.input,
                     storage = storage,
-                    animation = data.animation?.let { anim ->
+                    // The panel stamps a default animation block on every slot, so a decorative item arrives
+                // here carrying targetX/targetY = 0 and duration = 0. That is not an animation:
+                // with duration 0 the progress ratio is +Inf, clamps to 1.0, and the slot is drawn
+                // at its target — every such slot collapsing onto index 0 — while also scheduling a
+                // re-render that races the pending window open and kills the session. Treat a
+                // non-positive duration as "no animation" so the slot keeps its own position.
+                animation = data.animation?.takeIf { it.duration > 0 }?.let { anim ->
                         btcrenaud.gui.api.SlotAnimation(anim.targetX, anim.targetY, anim.duration, anim.easing)
                     },
                     cooldownTicks = data.cooldownTicks,

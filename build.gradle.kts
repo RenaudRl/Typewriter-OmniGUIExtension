@@ -1,11 +1,11 @@
-﻿plugins {
+plugins {
     kotlin("jvm") version "2.3.20"
     id("com.typewritermc.module-plugin") version "2.1.0"
     `maven-publish`
 }
 
 group = "btcrenaud"
-version = "0.12"
+version = "0.13"
 
 repositories {
     mavenCentral()

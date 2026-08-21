@@ -76,7 +76,10 @@ class StorageGuiSlot(
         animation: btcrenaud.gui.api.SlotAnimation?,
         cooldownTicks: Long,
         tag: String?,
-        onClick: ((org.bukkit.entity.Player, btcrenaud.gui.api.InteractionType) -> Unit)?
+        onClick: ((org.bukkit.entity.Player, btcrenaud.gui.api.InteractionType) -> Unit)?,
+        // A storage slot shows the player's own stored items, never an author-built visual, so
+        // the render-time rebuild hook is accepted for signature parity and deliberately dropped.
+        itemProvider: ((org.bukkit.entity.Player) -> ItemStack)?
     ): StorageGuiSlot {
         return StorageGuiSlot(
             x = x, y = y, item = item,

@@ -356,7 +356,18 @@ open class GuiSlot(
      * tabs...). Not serialized; fires in addition to commands/triggers on any click.
      */
     @Transient
-    val onClick: ((org.bukkit.entity.Player, InteractionType) -> Unit)? = null
+    val onClick: ((org.bukkit.entity.Player, InteractionType) -> Unit)? = null,
+    /**
+     * Rebuilds this slot's item at render time, so a name or lore holding a placeholder,
+     * a countdown or a live counter actually changes on screen.
+     *
+     * A layout's slots are parsed ONCE and [SimpleLayout.getSlots] hands back that same list on
+     * every render, items included — so without this hook `autoRefreshTicks` re-drew frozen
+     * stacks and nothing ever updated. Left null for slots whose visual cannot change: the
+     * provider runs on every render, for every slot that has one.
+     */
+    @Transient
+    val itemProvider: ((org.bukkit.entity.Player) -> org.bukkit.inventory.ItemStack)? = null
 ) {
     open fun copy(
         x: Int = this.x,
@@ -373,8 +384,9 @@ open class GuiSlot(
         animation: SlotAnimation? = this.animation,
         cooldownTicks: Long = this.cooldownTicks,
         tag: String? = this.tag,
-        onClick: ((org.bukkit.entity.Player, InteractionType) -> Unit)? = this.onClick
-    ) = GuiSlot(x, y, item, allowPickup, isGhost, commands, triggers, modifiers, interactions, input, storage, animation, cooldownTicks, tag, onClick)
+        onClick: ((org.bukkit.entity.Player, InteractionType) -> Unit)? = this.onClick,
+        itemProvider: ((org.bukkit.entity.Player) -> org.bukkit.inventory.ItemStack)? = this.itemProvider
+    ) = GuiSlot(x, y, item, allowPickup, isGhost, commands, triggers, modifiers, interactions, input, storage, animation, cooldownTicks, tag, onClick, itemProvider)
 }
 
 data class SlotAnimation(
