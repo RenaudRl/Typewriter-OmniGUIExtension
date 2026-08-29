@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.14 — 2026-08-29
+
+### Fact leaderboards
+
+- Added `gui_leaderboard`, a reusable definition ranking players, worlds or Typewriter groups on
+  one or more `ReadableFactEntry` values, and the `leaderboard` layout that renders it into any
+  `open_gui` pool. Rows accept `{rank}`, `{name}`, `{score}`, `{group}`, `{world}` and
+  `{score_<fact_id>}`; pagination is driven by the reserved rectangle and two optional buttons.
+- Added `gui_leaderboard_population`, an artifact holding the last known values of players who
+  are offline. The official engine deliberately exposes no offline fact snapshot, so the
+  extension refreshes this one while players are online and once more on quit, then merges it
+  with live values when rendering. Without it a leaderboard only ever ranks who is connected.
+
+### Storage
+
+- Added `dropOnClose` on storage slots: remaining contents are dropped at the player's feet on a
+  real close, on Escape and on disconnect. Independent from `temporary` and from the click
+  bindings.
+- Fixed temporary storage slots never being cleared. `collectStorageSlots` returned an empty list
+  for `StorageLayout` — the very layout that owns those slots — so `temporary` was inert and
+  `temporaryTriggers` never fired for a slot declared through a storage layout.
+- Fixed a deposit being swallowed by the take binding. `SHIFT_RIGHT` was resolved as take-stack
+  before place-all, so shift-right-clicking with a matching item on the cursor took instead of
+  depositing. With an item on the cursor it now deposits; with an empty cursor it keeps the
+  take-stack behavior.
+
+### Fixes
+
+- A blank permission is no longer a permission. The web editor serializes an unset
+  `viewPermission`/`clickPermission` as `""`, which Bukkit resolves through
+  `Permission.DEFAULT_PERMISSION` — that is, OP: the slot silently disappeared for every
+  non-operator while operators kept seeing it. The same fix covers `MenuViewData.viewPermission`,
+  where it hid a whole tab. Blank now means "no gate", as the editor validation already assumed.
+- Startup validation knows the `leaderboard` layout. It was absent from `KNOWN_CASES`, so a valid
+  menu was reported as an error while the runtime drew it correctly. It now also reports a rank
+  area falling outside the inventory and a layout referencing no `gui_leaderboard`.
+
 ## 0.12 — 2026-08-12
 
 - Added `extendToPlayerInventory` on `open_gui`: the player's own 36 slots become four extra

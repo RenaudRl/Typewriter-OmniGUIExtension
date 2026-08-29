@@ -1193,7 +1193,7 @@ object MenuSessionService : Listener {
             }
             // The top window is a plain 54-slot container here; clearing it would be pointless,
             // and the bottom band never held real items to give back.
-            processTemporaryStorageSlots(player, session)
+            processStorageOnClose(player, session)
             activeSessions.remove(player.uniqueId)
             session.refreshTask?.cancel()
             endExtendedProjection(player)
@@ -1232,7 +1232,7 @@ object MenuSessionService : Listener {
         }
 
         // Process temporary storage slots: clear content + fire temporaryTriggers
-        processTemporaryStorageSlots(player, session)
+        processStorageOnClose(player, session)
 
         activeSessions.remove(player.uniqueId)
         session.refreshTask?.cancel()
@@ -1304,6 +1304,7 @@ object MenuSessionService : Listener {
         if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE || guiType == btcrenaud.gui.GuiType.MERCHANT) {
             returnMerchantInputs(event.player, event.player.openInventory.topInventory)
         }
+        processStorageOnClose(event.player, session)
         btcrenaud.gui.api.GuiCloseEvent(event.player, session.definition).callEvent()
     }
 
@@ -1342,7 +1343,7 @@ object MenuSessionService : Listener {
      * if the slot was non-empty.
      */
     private fun processTemporaryStorageSlots(player: Player, session: ActiveSession) {
-        val storageSlots = collectStorageSlots(session.definition.layout)
+        val storageSlots = collectStorageSlots(session.definition.layout, session)
         for (slot in storageSlots) {
             if (slot.temporary) {
                 val stored = GuiStorageService.getItem(slot.entry, slot.groupKey, slot.slotIndex)
@@ -1357,22 +1358,51 @@ object MenuSessionService : Listener {
         }
     }
 
+    /** Drops configured storage contents on a real close, then applies temporary cleanup. */
+    private fun processStorageOnClose(player: Player, session: ActiveSession) {
+        val storageSlots = collectStorageSlots(session.definition.layout, session)
+            .distinctBy { "${it.entry.artifactId}:${it.groupKey}:${it.slotIndex}" }
+        for (slot in storageSlots) {
+            val stored = GuiStorageService.getItem(slot.entry, slot.groupKey, slot.slotIndex)
+            val wasFilled = stored != null && !stored.type.isAir
+            if (!wasFilled) continue
+
+            if (slot.dropOnClose) {
+                player.world.dropItemNaturally(player.location, stored.clone())
+                GuiStorageService.setItem(slot.entry, slot.groupKey, slot.slotIndex, null)
+                continue
+            }
+
+            if (slot.temporary) {
+                GuiStorageService.setItem(slot.entry, slot.groupKey, slot.slotIndex, null)
+                if (slot.temporaryTriggers.isNotEmpty()) {
+                    slot.temporaryTriggers.triggerEntriesFor(player, context())
+                }
+            }
+        }
+    }
+
     /**
      * Recursively collects all [btcrenaud.gui.api.StorageGuiSlot] instances from a layout tree.
      */
-    private fun collectStorageSlots(layout: btcrenaud.gui.api.MenuLayout): List<btcrenaud.gui.api.StorageGuiSlot> {
+    private fun collectStorageSlots(
+        layout: btcrenaud.gui.api.MenuLayout,
+        session: ActiveSession,
+    ): List<btcrenaud.gui.api.StorageGuiSlot> {
         val result = mutableListOf<btcrenaud.gui.api.StorageGuiSlot>()
         when (layout) {
             is btcrenaud.gui.api.StorageLayout -> {
-                // StorageLayout builds slots dynamically — we need a session to call getSlots().
-                // Fallback: iterate slotConfigs directly (we don't have live slots but can check configs).
-                return result // StorageLayout handles its own lifecycle
+                val viewport = btcrenaud.gui.api.Viewport(
+                    width = layout.virtualWidth.coerceAtLeast(9),
+                    height = layout.virtualHeight.coerceAtLeast(session.viewport.height)
+                )
+                result.addAll(layout.getSlots(session, viewport).filterIsInstance<btcrenaud.gui.api.StorageGuiSlot>())
             }
             is btcrenaud.gui.api.CompositeLayout -> {
-                for (child in layout.children) result.addAll(collectStorageSlots(child))
+                for (child in layout.children) result.addAll(collectStorageSlots(child, session))
             }
             is btcrenaud.gui.api.ScrollableLayout -> {
-                result.addAll(collectStorageSlots(layout.layout))
+                result.addAll(collectStorageSlots(layout.layout, session))
             }
             is btcrenaud.gui.api.PaginatedLayout -> {
                 for (page in layout.pages) {
@@ -1383,7 +1413,7 @@ object MenuSessionService : Listener {
             }
             is btcrenaud.gui.api.FrameLayout -> {
                 for (frame in layout.frames) {
-                    result.addAll(collectStorageSlots(frame.layout))
+                    result.addAll(collectStorageSlots(frame.layout, session))
                 }
             }
             is btcrenaud.gui.api.SimpleLayout -> {
@@ -1394,7 +1424,7 @@ object MenuSessionService : Listener {
             else -> {}
         }
         // Recurse into inner layout if present
-        layout.innerLayout?.let { result.addAll(collectStorageSlots(it)) }
+        layout.innerLayout?.let { result.addAll(collectStorageSlots(it, session)) }
         return result
     }
 

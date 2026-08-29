@@ -32,6 +32,7 @@ import com.typewritermc.engine.paper.utils.item.components.ItemMaterialComponent
 import org.bukkit.Material
 import btcrenaud.gui.api.MenuAudioConfig
 import btcrenaud.gui.api.InteractionType
+import btcrenaud.gui.api.permits
 import btcrenaud.gui.api.Viewport
 import btcrenaud.gui.api.StorageGuiSlot
 import com.typewritermc.engine.paper.utils.Sound
@@ -354,8 +355,8 @@ object GuiSlotBuilder {
         storagePool: Map<String, StorageSlotData> = emptyMap(),
     ): List<btcrenaud.gui.api.GuiSlot> {
         if (!data.criteria.matches(player, context)) return emptyList()
-        if (data.viewPermission != null && !player.hasPermission(data.viewPermission)) return emptyList()
-        val canClick = data.clickPermission == null || player.hasPermission(data.clickPermission)
+        if (!data.viewPermission.permits(player)) return emptyList()
+        val canClick = data.clickPermission.permits(player)
         
         // Handle tagged button types — build the user-configured slot with a tag so resolvers can
         // replace the interactions while preserving the configured visual (item, name, lore).
@@ -490,6 +491,7 @@ object GuiSlotBuilder {
                     slotIndex = py * 9 + px,
                     maxStack = storage.maxAmount,
                     temporary = storage.temporary,
+                    dropOnClose = storage.dropOnClose,
                     temporaryTriggers = storage.temporaryTriggers,
                     onFill = storage.onFill,
                     onEmpty = storage.onEmpty,
@@ -773,6 +775,8 @@ data class StorageSlotLayoutItemData(
     val maxStack: Int = 64,
     @Help("If true, the slot content is lost when the menu closes.")
     val temporary: Boolean = false,
+    @Help("If true, remaining contents are dropped on the ground when the menu really closes.")
+    val dropOnClose: Boolean = false,
     @Help("Placeholder item shown when the slot is empty.")
     val placeholder: Var<Item>? = null,
     @Help("Triggers executed when the slot becomes non-empty.")
@@ -788,6 +792,29 @@ data class StorageSlotLayoutItemData(
     @Help("If true, deposited items are consumed when requiredAmount is reached.")
     val consumeItems: Boolean = true
 )
+
+/** A dynamic fact leaderboard embedded in an OpenGUI layout. */
+@Serializable
+@SerialName("leaderboard")
+@AlgebraicTypeInfo("leaderboard", com.typewritermc.core.books.pages.Colors.ORANGE, "mdi:podium")
+data class LeaderboardLayoutData(
+    @Help("Unique identifier for this layout.")
+    override val id: String = "",
+    @Help("Reusable gui_leaderboard entry to render.")
+    val leaderboard: Ref<btcrenaud.gui.entries.GuiLeaderboardEntry> = emptyRef(),
+    @Help("First column of the dynamic rows.")
+    val x: Int = 0,
+    @Help("First row of the dynamic rows.")
+    val y: Int = 0,
+    @Help("Number of columns reserved for dynamic rows.")
+    val width: Int = 9,
+    @Help("Number of rows reserved for dynamic rows.")
+    val height: Int = 5,
+    @Help("Optional previous-page button. Its position comes from the GuiItemData.")
+    val previousButton: GuiItemData? = null,
+    @Help("Optional next-page button. Its position comes from the GuiItemData.")
+    val nextButton: GuiItemData? = null,
+) : LayoutData
 
 /** Storage slot configuration linked to a [GuiStorageEntry] artifact.
  *
@@ -807,6 +834,8 @@ data class StorageSlotData(
     val maxAmount: Int = 64,
     @Help("If true, the slot content is lost when the menu closes")
     val temporary: Boolean = false,
+    @Help("If true, remaining contents are dropped on the ground when the menu really closes. Independent from take/place clicks.")
+    val dropOnClose: Boolean = false,
     @Help("Triggers executed when the menu closes if the slot was filled and temporary is true")
     val temporaryTriggers: List<Ref<TriggerableEntry>> = emptyList(),
     @Help("Placeholder item shown when the slot is empty")

@@ -162,9 +162,9 @@ object GuiStorageService {
      *
      * Priority order (first match wins):
      *   1. PLACE_ONE  — cursor has matching item
-     *   2. TAKE_ALL   — slot has items, cursor empty or same type
-     *   3. TAKE_ONE   — slot has items
-     *   4. PLACE_ALL  — cursor has matching item
+     *   2. PLACE_ALL  — cursor has a matching item (including shift-right)
+     *   3. TAKE_ALL   — slot has items, cursor empty or same type
+     *   4. TAKE_ONE   — slot has items
      *   5. TAKE_STACK — slot has items (or fill from inventory if slot empty + cursor matches)
      *   6. FILL_FROM_INV — fills from player inventory (cursor content is moved to slot too)
      *   7. DROP_ALL   — slot has items
@@ -180,6 +180,15 @@ object GuiStorageService {
             val c = cursor
             if (c != null && matchesRequiredItem(slot, c)) {
                 placeOne(player, slot, stored, c, onRerender)
+                return
+            }
+        }
+        // A shift-right with an item on the cursor is unambiguously a deposit. Resolve this
+        // before takeStack so the default take binding cannot swallow the placement.
+        if (clickType == ClickType.SHIFT_RIGHT) {
+            val c = cursor
+            if (c != null && matchesRequiredItem(slot, c)) {
+                placeAll(player, slot, stored, c, onRerender)
                 return
             }
         }

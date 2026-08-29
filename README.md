@@ -78,6 +78,8 @@ Create an `open_gui` entry in your Typewriter page:
 | **Composite** | Z-order layer stacking | Overlays |
 | **Book** | Written book with MiniMessage pages | Lore, guides |
 | **Merchant** | Villager trades with custom items | Shops |
+| **Storage** | Persistent slots backed by a `gui_storage` artifact | Deposits, machine inputs |
+| **Leaderboard** | Fact-backed ranking rows with pagination | Scoreboards, ladders |
 
 ## Slot repetition
 
@@ -98,6 +100,14 @@ Any item can place several slots at once instead of being copy-pasted:
 Slots landing outside the grid are dropped and reported in the server console with the
 layout id and the rejected coordinates. The editor warns when `count`/`gap`/`repeatY`
 are set without a `direction`, and errors on an unknown `direction` value.
+
+## Slot permissions
+
+`viewPermission` hides a slot from anyone without the node; `clickPermission` renders it but makes
+it inert. Both are opt-in, and **a blank value is not a gate**: the panel serializes an unset field
+as `""`, and Bukkit resolves an unregistered node — `""` included — as operator-only, which would
+hide the slot from every ordinary player. Leave them empty to gate nothing. The same rule applies
+to a view's `viewPermission`.
 
 ## Extended inventory
 
@@ -150,10 +160,31 @@ Requirements and caveats:
 | Place one | `LEFT` | `gui_settings.placeOneClick` |
 | Place all | `SHIFT_LEFT` | `gui_settings.placeAllClick` |
 | Take one | `RIGHT` | `gui_settings.takeOneClick` |
-| Take all | `SHIFT_RIGHT` | `gui_settings.takeAllClick` |
-| Take stack | `SWAP_OFFHAND` | `gui_settings.takeStackClick` |
-| Fill from inv | `DOUBLE_CLICK` | `gui_settings.fillFromInvClick` |
+| Take all | `LEFT` | `gui_settings.takeAllClick` |
+| Take stack | `SHIFT_RIGHT` (cursor empty) | `gui_settings.takeStackClick` |
+| Fill from inv | `SWAP_OFFHAND` | `gui_settings.fillFromInvClick` |
 | Drop all | `DROP` | `gui_settings.dropAllClick` |
+
+`dropOnClose` is independent from these bindings. When enabled on a storage slot, any content still
+stored is dropped at the player's location on Escape, a real close, or disconnect. Menu-to-menu
+transitions do not trigger the drop. A `SHIFT_RIGHT` with an item on the cursor deposits the
+compatible stack; with an empty cursor it keeps the take-stack behavior.
+
+## Fact leaderboards
+
+Create one `gui_leaderboard` entry and reference it from a `leaderboard` layout in an `open_gui`
+`layoutPool`. The entry accepts several `ReadableFactEntry` references and can rank by `PLAYER`,
+`WORLD`, or a selected Typewriter `GROUP`. Set the optional `population` reference to a
+`gui_leaderboard_population` Artifact to retain the last known values of offline players. The
+official engine is not modified: the extension refreshes this snapshot while players are online
+and on quit, then merges it with live values when rendering.
+
+The `group` field is a native Typewriter `Ref<GroupEntry>`. The optional `worlds` field is a list of
+native `Var<Position>` selectors, so several worlds can be selected through variables; an empty
+list means every world. Positions are retained in the snapshot, while `WORLD` aggregation uses
+their native `World` value. Useful row tokens are `{rank}`, `{name}`, `{score}`, `{group}`,
+`{world}` and `{score_<fact_id>}`. Set `autoRefreshTicks` on the `open_gui` entry when the facts
+must refresh while the menu is open.
 
 ## Vanilla GUIs
 

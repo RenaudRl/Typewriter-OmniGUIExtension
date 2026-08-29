@@ -74,7 +74,7 @@ object MenuValidationService {
 
     private val KNOWN_CASES = setOf(
         "simple", "flex", "paginated", "scrollable", "frame",
-        "composite", "book", "merchant", "storage",
+        "composite", "book", "merchant", "storage", "leaderboard",
     )
 
     /** A normalized layout pool element. */
@@ -557,6 +557,27 @@ object MenuValidationService {
                         path = "${layout.path}.slots[$i]",
                     )
                 }
+            }
+            "leaderboard" -> {
+                val x = layout.value.get("x")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                val y = layout.value.get("y")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+                val width = layout.value.get("width")?.takeIf { it.isJsonPrimitive }?.asInt ?: 9
+                val height = layout.value.get("height")?.takeIf { it.isJsonPrimitive }?.asInt ?: 5
+                val lastX = x + width.coerceAtLeast(1) - 1
+                val lastY = y + height.coerceAtLeast(1) - 1
+                // A null maxRows is a scrollable's unbounded virtual space, not a zero-height area.
+                val overflowsDown = bounds.maxRows?.let { lastY >= it } == true
+                if (x < 0 || y < 0 || lastX >= bounds.width || overflowsDown) issues += Issue(
+                    Severity.ERROR, "leaderboard.area.outOfBounds",
+                    "Leaderboard '${layout.id}': rows span ($x,$y) to ($lastX,$lastY), outside the " +
+                        "${bounds.width}x${bounds.maxRows ?: "*"} area — those ranks are never drawn.",
+                    editorId = layout.editorId, path = layout.path,
+                )
+                if (layout.value.get("leaderboard")?.takeIf { it.isJsonPrimitive }?.asString.isNullOrBlank()) issues += Issue(
+                    Severity.WARNING, "leaderboard.entry.missing",
+                    "Leaderboard '${layout.id}' references no gui_leaderboard entry — it displays nothing.",
+                    editorId = layout.editorId, path = "${layout.path}.leaderboard",
+                )
             }
             "book", "merchant" -> {
                 // Dedicated top-level layouts — no grid content to validate here.

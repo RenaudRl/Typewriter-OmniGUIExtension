@@ -14,6 +14,10 @@ import org.bukkit.Bukkit
 import org.bukkit.plugin.Plugin
 import org.koin.java.KoinJavaComponent
 import btcrenaud.gui.migration.OpenGuiPageMigrator
+import btcrenaud.gui.entries.GuiLeaderboardEntry
+import btcrenaud.gui.entries.GuiLeaderboardPopulationEntry
+import com.typewritermc.core.entries.Query
+import com.typewritermc.engine.paper.entry.AssetManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -44,6 +48,13 @@ object Initializer : Initializable {
 
         // Layout types are auto-discovered by the engine's AlgebraicSerializationFactory
         // No explicit registration needed.
+
+        LeaderboardPopulationStore.initialize(
+            plugin = plugin,
+            assetManager = KoinJavaComponent.get(AssetManager::class.java),
+            entries = Query.find<GuiLeaderboardEntry>().toList(),
+            artifacts = Query.find<GuiLeaderboardPopulationEntry>().toList(),
+        )
 
         MenuSessionService.initialize(plugin)
         ExtendedInventoryPacketService.initialize()
@@ -91,6 +102,7 @@ object Initializer : Initializable {
     }
 
     override suspend fun shutdown() {
+        LeaderboardPopulationStore.shutdown()
         MenuSessionService.shutdown()
         ExtendedInventoryPacketService.shutdown()
         // Unregister too, or every extension reload leaves a stale listener from the old,

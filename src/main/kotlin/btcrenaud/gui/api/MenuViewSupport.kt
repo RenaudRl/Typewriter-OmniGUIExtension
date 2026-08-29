@@ -400,7 +400,7 @@ data class MenuViewData(
     fun label(): String = name.ifBlank { id }
 
     fun isVisibleTo(player: Player, context: InteractionContext): Boolean {
-        if (viewPermission != null && !player.hasPermission(viewPermission)) return false
+        if (!viewPermission.permits(player)) return false
         return criteria.matches(player, context)
     }
 }

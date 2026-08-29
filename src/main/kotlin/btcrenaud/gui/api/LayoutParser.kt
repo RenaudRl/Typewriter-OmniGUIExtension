@@ -212,6 +212,22 @@ object LayoutParser {
             }
             is BookLayoutData -> EmptyLayout // Handled at top level
             is MerchantLayoutData -> EmptyLayout // Handled at top level
+            is LeaderboardLayoutData -> {
+                val leaderboard = data.leaderboard.get() ?: return EmptyLayout
+                val effectiveWidth = data.width.coerceAtLeast(1)
+                val effectiveHeight = data.height.coerceAtLeast(1)
+                val positions = (0 until effectiveHeight).flatMap { row ->
+                    (0 until effectiveWidth).map { column -> data.x + column to data.y + row }
+                }
+                LeaderboardLayout(
+                    entry = leaderboard,
+                    context = context,
+                    positions = positions,
+                    previousButton = data.previousButton?.toSlot(player, context, guiType).orEmpty().firstOrNull(),
+                    nextButton = data.nextButton?.toSlot(player, context, guiType).orEmpty().firstOrNull(),
+                    id = data.id,
+                )
+            }
             is StorageLayoutData -> {
                 val storageEntry = data.entry.get() ?: return EmptyLayout
                 val groupKey = data.groupKey.get(player, context)
@@ -221,6 +237,7 @@ object LayoutParser {
                         slotIndex = slot.y * 9 + slot.x,
                         maxStack = slot.maxStack,
                         temporary = slot.temporary,
+                        dropOnClose = slot.dropOnClose,
                         placeholder = slot.placeholder?.get(player, context)
                             ?.let { it.build(player, context).clone() } ?: ItemStack(Material.AIR),
                         onFill = slot.onFill, onEmpty = slot.onEmpty,
