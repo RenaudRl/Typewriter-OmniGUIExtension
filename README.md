@@ -8,7 +8,7 @@
 
 **OmniGUIExtension** is the central menu system for the Typewriter ecosystem. It provides:
 
-- **9 layout engines** — Simple, Scrollable, Flex, Frame, Paginated, Composite, Book, Merchant, Vanilla GUIs
+- **11 layout engines** — Simple, Scrollable, Flex, Frame, Paginated, Composite, Book, Merchant, Storage, Leaderboard, Vanilla GUIs
 - **23 inventory types** — Chest, Anvil, Enchanting, Smithing, Merchant, Book, and more
 - **Persistent item storage** — Per-player or group-based with accumulation/progress tracking
 - **Scrollable multi-frame dashboards** — Independent scrollable zones with custom navigation buttons
