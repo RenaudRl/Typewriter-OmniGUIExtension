@@ -5,7 +5,9 @@ plugins {
 }
 
 group = "btcrenaud"
-version = "0.15"
+version = "0.16"
+
+val typewriterEngineVersion = "0.9.0-beta-177"
 
 repositories {
     mavenCentral()
@@ -28,7 +30,7 @@ typewriter {
         name = "GuiAndDialogs"
         shortDescription = "Advanced GUI system with layout engines and MiniMessage support."
         description = """Typewriter extension providing a complete menu system with layout engines (Simple, Scrollable, Frame, Paginated, Composite, Book, Merchant), 23 inventory types, persistent item storage with per-player or group-based scoping, configurable click actions, and full MiniMessage formatting. Supports Paper and Folia server platforms. Foundation for Typewriter extensions requiring menus."""
-        engineVersion = "0.9.0-beta-176"
+        engineVersion = typewriterEngineVersion
         channel = com.typewritermc.moduleplugin.ReleaseChannel.BETA
         
         paper()

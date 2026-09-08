@@ -214,19 +214,31 @@ class LeaderboardLayout(
         return rendered
     }
 
-    private fun buildItem(player: Player, row: LeaderboardRow, rank: Int): ItemStack {
-        val blueprint = entry.rowItem.get(player, context)
-        val stack = if (blueprint == Item.Empty) ItemStack(Material.PAPER) else blueprint.build(player, context).clone()
+    private fun buildItem(viewer: Player, row: LeaderboardRow, rank: Int): ItemStack {
+        // A row describes its own subject, so its Vars must resolve against that player and not
+        // against whoever opened the menu — otherwise every row renders the viewer's values.
+        val subject = row.subject() ?: viewer
+        val blueprint = entry.rowItem.get(subject, context)
+        val stack = if (blueprint == Item.Empty) ItemStack(Material.PAPER) else blueprint.build(subject, context).clone()
         val safeStack = stack.takeUnless { it.type.isAir } ?: ItemStack(Material.PAPER)
         val meta = safeStack.itemMeta ?: return safeStack
         val tokens = row.tokens(rank)
-        meta.displayName(entry.rowName.get(player, context).replaceTokens(tokens).asMini().decoration(TextDecoration.ITALIC, false))
-        val lore = entry.rowLore.map { it.get(player, context).replaceTokens(tokens).asMini().decoration(TextDecoration.ITALIC, false) }
+        meta.displayName(entry.rowName.get(subject, context).replaceTokens(tokens).asMini().decoration(TextDecoration.ITALIC, false))
+        val lore = entry.rowLore.map { it.get(subject, context).replaceTokens(tokens).asMini().decoration(TextDecoration.ITALIC, false) }
         if (lore.isNotEmpty()) meta.lore(lore)
         safeStack.itemMeta = meta
         return safeStack
     }
 }
+
+/**
+ * The player a row's content speaks about, or `null` when the row has no online player behind it —
+ * a world or group row, or a ranked player who has since gone offline. Callers fall back to the viewer.
+ */
+private fun LeaderboardRow.subject(): Player? = subjectUuid()?.let(Bukkit::getPlayer)
+
+/** Identity a row's content speaks about; world and group rows have none. Pure, so it is unit tested. */
+internal fun LeaderboardRow.subjectUuid(): UUID? = (key as? LeaderboardRowKey.Player)?.uuid
 
 private fun LeaderboardRow.tokens(rank: Int): Map<String, String> = buildMap {
     put("{rank}", rank.toString())

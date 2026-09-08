@@ -34,4 +34,11 @@ class LeaderboardRankingTest {
                 .map { it.name },
         )
     }
+
+    @Test
+    fun `a player row speaks about that player, not about the viewer`() {
+        val ranked = UUID.fromString("00000000-0000-0000-0000-00000000000b")
+
+        assertEquals(ranked, LeaderboardRow(LeaderboardRowKey.Player(ranked), "Beta", 10).subjectUuid())
+    }
 }
