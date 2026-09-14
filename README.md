@@ -94,7 +94,7 @@ Any item can place several slots at once instead of being copy-pasted:
 |:---|:---|
 | `direction` | `right`, `left`, `down`, `up` — **required**; without it `count`, `gap` and `repeatY` are ignored and a single slot is placed |
 | `count` | Number of slots along `direction` |
-| `gap` | **Step**, not a spacing: `1` = adjacent (default), `2` = one empty slot between each. Applies to both axes |
+| `gap` | **Step**, not a spacing: `1` = adjacent (default), `2` = one empty slot between each. Applies to both axes. `0` (what the editor writes for an untouched field) behaves as `1` |
 | `repeatY` | Repeats the whole line on the axis **perpendicular** to `direction` — downwards for `right`/`left`, to the right for `down`/`up` |
 
 Slots landing outside the grid are dropped and reported in the server console with the

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.17 — 2026-09-14
+
+### Fixes
+
+- A `gap` of `0` no longer stacks every repeated copy on the origin cell. The web editor
+  serializes an untouched `gap` as `0`, and the repetition formula multiplied by it as-is: a
+  `QUEST_SLOT` with `count: 7` and `direction: right` produced seven markers all at `(1,1)`, the
+  codex rendered seven quests on one cell and the console reported a "Slot overlap" the author
+  never wrote. `gap` is now coerced to at least `1`, exactly like `count` and `repeatY`. Fixed
+  once in `SlotRepetition`, so the runtime, the editor validation and every extension placing
+  its own markers (QuestCodex, Shops) get the fix without a rebuild.
+
 ## 0.14 — 2026-08-29
 
 ### Fact leaderboards

@@ -16,8 +16,10 @@ package btcrenaud.gui.api
  *   `right`/`left`, horizontally for `down`/`up`. It is not "always downwards".
  * - `gap` is a STEP, not a spacing: 1 = adjacent slots, 2 = one empty slot between each. It
  *   applies to both axes.
- * - `count`/`repeatY` are coerced to at least 1: the editor serializes an unset value as `0`,
- *   and `0 until 0` would silently drop the item.
+ * - `count`/`repeatY`/`gap` are coerced to at least 1: the editor serializes an unset value as
+ *   `0`. `0 until 0` would silently drop the item, and a step of 0 stacked every copy on the
+ *   origin cell — seven `QUEST_SLOT` markers on (1,1), reported as an overlap the author never
+ *   wrote.
  */
 object SlotRepetition {
 
@@ -31,14 +33,15 @@ object SlotRepetition {
 
         val rows = repeatY.coerceAtLeast(1)
         val cols = count.coerceAtLeast(1)
+        val step = gap.coerceAtLeast(1)
         val positions = ArrayList<Pair<Int, Int>>(rows * cols)
         for (ry in 0 until rows) {
             for (rc in 0 until cols) {
                 positions += when (dir) {
-                    "right" -> (x + rc * gap) to (y + ry * gap)
-                    "left" -> (x - rc * gap) to (y + ry * gap)
-                    "down" -> (x + ry * gap) to (y + rc * gap)
-                    else -> (x + ry * gap) to (y - rc * gap) // "up"
+                    "right" -> (x + rc * step) to (y + ry * step)
+                    "left" -> (x - rc * step) to (y + ry * step)
+                    "down" -> (x + ry * step) to (y + rc * step)
+                    else -> (x + ry * step) to (y - rc * step) // "up"
                 }
             }
         }

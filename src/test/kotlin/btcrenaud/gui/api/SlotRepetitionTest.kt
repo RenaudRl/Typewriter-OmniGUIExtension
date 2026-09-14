@@ -63,6 +63,21 @@ class SlotRepetitionTest {
     }
 
     @Test
+    fun `a zero gap steps by one instead of stacking every copy on the origin`() {
+        // The editor serializes an untouched 'gap' as 0. A step of 0 put all seven copies of a
+        // QUEST_SLOT on (1,1): the codex then rendered seven quests on one cell and OmniGUI
+        // reported a slot overlap the author had not written.
+        assertEquals(
+            (1..7).map { it to 1 },
+            SlotRepetition.expand(1, 1, "right", count = 7, gap = 0, repeatY = 1),
+        )
+        assertEquals(
+            listOf(0 to 0, 0 to 1, 1 to 0, 1 to 1),
+            SlotRepetition.expand(0, 0, "down", count = 2, gap = -3, repeatY = 2),
+        )
+    }
+
+    @Test
     fun `repetition settings without a direction are reported`() {
         assertTrue(SlotRepetition.hasOrphanRepetition(null, count = 4, gap = 1, repeatY = 1))
         assertTrue(SlotRepetition.hasOrphanRepetition(null, count = 1, gap = 2, repeatY = 1))
