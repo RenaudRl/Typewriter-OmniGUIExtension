@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18 — 2026-09-19
+
+### Fixes
+
+- The slot-overlap warning now names `gap` and recalls that it is a STEP, not a spacing. A
+  repeated slot colliding with a decoration placed between two of its copies is the most common
+  cause of that warning, and the message gave no way to reach it: authors read `gap: 1` as "one
+  empty slot between each" and got adjacent slots. Menus written against the pre-0.3.0 QuestCodex
+  formula, where the step applied was `gap + 1`, land exactly here.
+
 ## 0.17 — 2026-09-14
 
 ### Fixes

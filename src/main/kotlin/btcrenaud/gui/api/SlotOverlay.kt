@@ -84,7 +84,9 @@ object SlotOverlay {
             Level.WARNING,
             "[OmniGUI] Slot overlap in menu '$menu' at (x=$x, y=$y): several slots share these " +
                 "coordinates. Kept the ${if (isBearing(kept)) "interactive" else "inert"} one. " +
-                "Move one of them, or remove it from the layout."
+                "Move one of them, or remove it from the layout. If one of them is repeated, " +
+                "check its 'gap': it is a STEP, not a spacing — 1 places adjacent slots, " +
+                "2 leaves one empty slot between each."
         )
     }
 

@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "btcrenaud"
-version = "0.17"
+version = "0.18"
 
 val typewriterEngineVersion = "0.9.0-beta-177"
 
