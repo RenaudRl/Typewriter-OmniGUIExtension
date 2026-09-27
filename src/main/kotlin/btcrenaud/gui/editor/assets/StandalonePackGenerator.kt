@@ -6,6 +6,7 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.typewritermc.engine.paper.logger
+import net.kyori.adventure.key.Key
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
@@ -25,11 +26,17 @@ import javax.imageio.ImageIO
  * ```
  * pack.mcmeta
  * pack.png (optional)
- * assets/minecraft/font/default.json   <- font provider definitions
- * gui/font/space_1.png ...            <- space character textures
- * gui/font/neg_1.png ...              <- negative space textures
+ * assets/gui/font/space.json           <- `<shift:N>`: one `space` provider
+ * assets/gui/font/glyphs.json          <- hand-made providers from assets/font/
+ * assets/gui/textures/font/...         <- textures of those providers (`gui:font/<name>.png`)
  * assets/minecraft/textures/gui/...    <- generated UI textures
  * ```
+ *
+ * **Nothing is written to `minecraft:default`**: our characters hid other plugins' ones there, and
+ * a single broken provider made the client reject the whole pack. See [GuiFonts].
+ *
+ * NOTE (2026-09-27): nothing calls [generatePack] yet — OmniGUI ships no pack pipeline. Wiring it
+ * (generation, hosting, delivery) is task O1 of the `gui-editor-web` OpenSpec change.
  */
 object StandalonePackGenerator {
 
@@ -49,19 +56,19 @@ object StandalonePackGenerator {
         return runCatching {
             // Ensure the default asset directory exists with minimum required files
             ensureDefaultAssets(assetsDir)
-
-            // Ensure Magic Digit fonts are on disk first (skips existing)
-            MagicDigitFontGenerator.generateAll(assetsDir)
+            removeObsoleteSpaceTextures(assetsDir.resolve("font"))
 
             ZipOutputStream(Files.newOutputStream(outputZip).buffered()).use { zip ->
                 // pack.mcmeta
                 writePackMcmeta(zip)
                 // pack.png (optional icon, if present)
                 writeOptionalFile(zip, assetsDir.resolve("pack.png"), "pack.png")
-                // Font provider JSON (assets/minecraft/font/default.json)
-                writeFontProviderJson(zip, assetsDir)
-                // Font texture assets (space/neg PNGs) -> gui/font/ in the ZIP
-                writeDiskAssets(zip, assetsDir.resolve("font"), "gui/font/")
+                // Our fonts, all under gui:* — never minecraft:default
+                writeFont(zip, GuiFonts.SPACE, MagicDigitFontGenerator.generateFontJson().getAsJsonArray("providers"))
+                customFontProviders(assetsDir.resolve("font")).takeIf { !it.isEmpty }
+                    ?.let { writeFont(zip, GuiFonts.GLYPHS, it) }
+                // Textures of hand-made fonts: `gui:font/<name>.png` lives at assets/gui/textures/font/
+                writeDiskAssets(zip, assetsDir.resolve("font"), "assets/gui/textures/font/")
                 // Generated textures from disk -> assets/minecraft/textures/gui/
                 writeDiskAssets(zip, assetsDir.resolve("generated"), "assets/minecraft/textures/gui/")
                 // Custom textures from the custom/ directory -> assets/minecraft/textures/gui/custom/
@@ -133,45 +140,38 @@ object StandalonePackGenerator {
         zip.closeEntry()
     }
 
-    /**
-     * Writes the font provider JSON that Minecraft uses to map Unicode codepoints
-     * to texture files. This is essential — without it, the resource pack is unusable.
-     *
-     * The JSON is placed at `assets/minecraft/font/default.json` in the ZIP,
-     * which is the standard Minecraft font override location.
-     */
-    private fun writeFontProviderJson(zip: ZipOutputStream, assetsDir: Path) {
-        // Merge Magic Digit font providers with any user-defined providers
-        val magicDigitJson = MagicDigitFontGenerator.generateFontJson()
-        val providers = magicDigitJson.getAsJsonArray("providers") ?: JsonArray()
+    private fun writeFont(zip: ZipOutputStream, font: Key, providers: JsonArray) {
+        zip.putNextEntry(ZipEntry(GuiFonts.zipPath(font)))
+        zip.write(gson.toJson(JsonObject().apply { add("providers", providers) }).toByteArray(Charsets.UTF_8))
+        zip.closeEntry()
+    }
 
-        // Add any custom font providers from disk
-        val customFontDir = assetsDir.resolve("font")
-        if (Files.isDirectory(customFontDir)) {
-            Files.list(customFontDir).use { stream ->
-                stream.filter { it.fileName.toString().endsWith(".json") && it.fileName.toString() != "default.json" }
-                    .forEach { file ->
-                        runCatching {
-                            val customProvider = gson.fromJson(Files.newBufferedReader(file), JsonObject::class.java)
-                            if (customProvider.has("providers")) {
-                                customProvider.getAsJsonArray("providers").forEach { providers.add(it) }
-                            } else {
-                                providers.add(customProvider)
-                            }
-                        }.onFailure {
-                            logger.warning("[GUI-Editor] Failed to read custom font provider ${file.fileName}: ${it.message}")
-                        }
-                    }
+    /**
+     * The 384 `space_N` / `neg_N` PNGs and the working `default.json` written by the old bitmap
+     * Magic Digit. No provider references them any more.
+     */
+    private fun removeObsoleteSpaceTextures(fontDir: Path) {
+        if (!Files.isDirectory(fontDir)) return
+        val obsolete = Regex("(space|neg)_\\d+\\.png|default\\.json")
+        Files.list(fontDir).use { stream ->
+            stream.filter { obsolete.matches(it.fileName.toString()) }.forEach(Files::delete)
+        }
+    }
+
+    /** Hand-made providers dropped in `assets/font/<name>.json`; they go to [GuiFonts.GLYPHS]. */
+    private fun customFontProviders(fontDir: Path): JsonArray {
+        val providers = JsonArray()
+        if (!Files.isDirectory(fontDir)) return providers
+        val files = Files.list(fontDir).use { stream -> stream.filter { it.fileName.toString().endsWith(".json") }.toList() }
+        for (file in files) {
+            runCatching {
+                val json = gson.fromJson(Files.newBufferedReader(file), JsonObject::class.java)
+                if (json.has("providers")) json.getAsJsonArray("providers").forEach(providers::add) else providers.add(json)
+            }.onFailure {
+                logger.warning("[GUI-Editor] Failed to read custom font provider ${file.fileName}: ${it.message}")
             }
         }
-
-        val fontJson = JsonObject().apply {
-            add("providers", providers)
-        }
-
-        zip.putNextEntry(ZipEntry("assets/minecraft/font/default.json"))
-        zip.write(gson.toJson(fontJson).toByteArray(Charsets.UTF_8))
-        zip.closeEntry()
+        return providers
     }
 
     /**
@@ -186,7 +186,8 @@ object StandalonePackGenerator {
         if (!Files.isDirectory(dir)) return
 
         Files.walk(dir).use { stream ->
-            stream.filter { Files.isRegularFile(it) && isAllowedFile(it) }.forEach { file ->
+            // Font definitions are written by writeFont, never copied as textures.
+            stream.filter { Files.isRegularFile(it) && isAllowedFile(it) && !it.fileName.toString().endsWith(".json") }.forEach { file ->
                 val relativePath = dir.relativize(file).toString().replace('\\', '/')
                 val entryPath = if (zipPrefix.isNotEmpty()) "$zipPrefix$relativePath" else relativePath
                 zip.putNextEntry(ZipEntry(entryPath))
