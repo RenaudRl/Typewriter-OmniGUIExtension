@@ -55,7 +55,31 @@ data class MenuAudioConfig(
     val onScroll: Sound? = null,
     @Help("Sound played when an item is clicked.")
     val onClick: Sound? = null
-)
+) {
+    /**
+     * This config with every sound it leaves empty taken from [defaults] (the `gui_settings`
+     * `audioDefaults`). A sound set here always wins; the fallback is per sound, not all or nothing.
+     */
+    fun orElse(defaults: MenuAudioConfig): MenuAudioConfig {
+        val merged = SoundSet(onOpen, onClose, onScroll, onClick)
+            .orElse(SoundSet(defaults.onOpen, defaults.onClose, defaults.onScroll, defaults.onClick))
+        return MenuAudioConfig(merged.onOpen, merged.onClose, merged.onScroll, merged.onClick)
+    }
+}
+
+/**
+ * The four sound slots of a menu, generic over the sound type so the fallback rule is
+ * unit-testable without the engine.
+ */
+internal data class SoundSet<T : Any>(val onOpen: T?, val onClose: T?, val onScroll: T?, val onClick: T?) {
+    /** Each slot left empty here is taken from [defaults]; a slot set here is kept. */
+    fun orElse(defaults: SoundSet<T>) = SoundSet(
+        onOpen = onOpen ?: defaults.onOpen,
+        onClose = onClose ?: defaults.onClose,
+        onScroll = onScroll ?: defaults.onScroll,
+        onClick = onClick ?: defaults.onClick,
+    )
+}
 
 interface MenuLayout {
     val id: String? get() = null

@@ -1,6 +1,8 @@
 package btcrenaud.gui.entries
 
+import btcrenaud.gui.ScrollDirection
 import btcrenaud.gui.api.MenuAudioConfig
+import btcrenaud.gui.api.ScrollArrowPlacement
 import com.typewritermc.core.books.pages.Colors
 import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.Help
@@ -71,8 +73,18 @@ class GuiSettingEntry(
     override val id: String = "",
     override val name: String = "",
 
-    @Help("Default audio configuration for all GUIs if not overridden.")
+    @Help(
+        "Default sounds for every menu. A sound set here is played when the open_gui action leaves " +
+            "that sound empty (open, close, scroll, click); a sound set on the action always wins."
+    )
     val audioDefaults: MenuAudioConfig = MenuAudioConfig(),
+
+    @Help(
+        "Default arrows of scrollable layouts (those with showDefaultButtons on). Add only the " +
+            "directions to customize: an arrow with no entry here is a plain arrow item named ▲ ▼ ◀ ▶, " +
+            "in the right column (up, down) or the bottom row (left, right)."
+    )
+    val scrollArrows: List<ScrollArrowConfig> = emptyList(),
 
     @Help("Configure which mouse/keyboard clicks trigger each storage action (place, take, fill, drop).")
     val storageInteraction: StorageInteractionConfig = StorageInteractionConfig(),
@@ -80,6 +92,23 @@ class GuiSettingEntry(
     @Help("Skill Tree connector items. Add only the state and direction combinations that need a custom item.")
     val nodeDefaults: List<NodeConnectorConfig> = emptyList()
 ) : ManifestEntry
+
+/**
+ * One default scroll arrow override. A compact list keeps the Item blueprint out of the editor
+ * schema four times over, like [NodeConnectorConfig].
+ */
+data class ScrollArrowConfig(
+    @Help("Scroll direction this arrow stands for.")
+    override val direction: ScrollDirection = ScrollDirection.UP,
+    @Help("Item of the arrow. Leave empty for a plain arrow.")
+    val item: Item? = null,
+    @Help("Display name of the arrow (MiniMessage). Leave empty for the default arrow symbol.")
+    override val name: String? = null,
+    @Help("Column of the arrow in the menu (0 = leftmost). Leave empty for the default place.")
+    override val x: Int? = null,
+    @Help("Row of the arrow in the menu (0 = top). Leave empty for the default place.")
+    override val y: Int? = null,
+) : ScrollArrowPlacement
 
 /**
  * Represents the state of a skill tree node.

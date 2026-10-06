@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fields that were in the panel but not read
+
+- `gui_settings` `audioDefaults` now applies: a sound the `open_gui` action leaves empty (open,
+  close, scroll, click) is taken from it, sound by sound; a sound set on the action still wins.
+- A scrollable layout with `showDefaultButtons` on now gets an arrow for every direction that has no
+  button of its own (it was a no-op: the arrows were removed and never replaced). Off = no arrows.
+  The new `gui_settings` `scrollArrows` list changes an arrow's item, name or place; unconfigured,
+  arrows are plain arrow items on the right column (up, down) and the bottom row (left, right).
+
 ## 0.18 — 2026-09-19
 
 ### Fixes

@@ -233,7 +233,7 @@ class OpenGuiActionEntry(
                 onClose = audio.onClose,
                 onScroll = audio.onScroll,
                 onClick = audio.onClick
-            ),
+            ).orElse(globalAudioDefaults()),
             activeViewId = resolvedView?.activeViewId,
             breadcrumb = resolvedView?.breadcrumb ?: emptyList(),
             viewSwitcher = if (effectiveViews.isEmpty()) null else { switchedPlayer, viewId ->
@@ -700,7 +700,7 @@ data class ScrollableLayoutData(
     val virtualHeight: Int? = null,
     @Help("Scroll navigation buttons (up, down, left, right arrows). These are fixed outside the scrollable viewport.")
     val buttons: List<ScrollButtonData> = emptyList(),
-    @Help("If true, default arrow buttons are added automatically. Set to false when using custom buttons.")
+    @Help("If true, an arrow is added for every scroll direction that has no button of its own above (item, name and place can be changed in the gui_settings entry). Set to false for no arrows at all.")
     val showDefaultButtons: Boolean = true
 ) : LayoutData
 
@@ -957,10 +957,16 @@ private fun String.asMiniCE(): net.kyori.adventure.text.Component {
     return asMiniWithResolvers(btcrenaud.gui.resourcepack.font.GuiTagResolvers.shift())
 }
 
+/** The `gui_settings` default sounds; none when the entry does not exist or cannot be read. */
+private fun globalAudioDefaults(): btcrenaud.gui.api.MenuAudioConfig =
+    runCatching {
+        com.typewritermc.core.entries.Query.find<btcrenaud.gui.entries.GuiSettingEntry>().firstOrNull()?.audioDefaults
+    }.getOrNull() ?: btcrenaud.gui.api.MenuAudioConfig()
+
 /**
  * Item name / lore variant of [asMiniCE]. Minecraft forces custom item text to italic by
  * default; here we render it upright by default so menus look clean. Authors who *want*
  * italic simply add the `<italic>` MiniMessage tag, which wins over this root default.
  */
-private fun String.asMiniItem(): net.kyori.adventure.text.Component =
+internal fun String.asMiniItem(): net.kyori.adventure.text.Component =
     asMiniCE().decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false)

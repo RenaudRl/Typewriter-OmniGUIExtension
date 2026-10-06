@@ -1,6 +1,10 @@
 package btcrenaud.gui.api
 
 import btcrenaud.gui.*
+import btcrenaud.gui.entries.GuiSettingEntry
+import btcrenaud.gui.entries.ScrollArrowConfig
+import com.typewritermc.core.entries.Query
+import com.typewritermc.engine.paper.utils.item.Item
 import com.typewritermc.core.interaction.InteractionContext
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
@@ -68,6 +72,33 @@ object LayoutParser {
         LOGGER.warning(
             "[OmniGUI] Layout '$layout': $rejected of $total slots dropped for falling outside " +
                 "the ${width}-wide grid."
+        )
+    }
+
+    /** The `gui_settings` arrow overrides; none when the entry does not exist or cannot be read. */
+    private fun scrollArrowOverrides(): List<ScrollArrowConfig> =
+        runCatching { Query.find<GuiSettingEntry>().firstOrNull()?.scrollArrows }
+            .getOrNull().orEmpty()
+
+    private fun defaultArrowSlot(
+        player: Player,
+        context: InteractionContext,
+        direction: ScrollDirection,
+        layoutId: String,
+        overrides: List<ScrollArrowConfig>,
+        totalSize: Int,
+    ): GuiSlot {
+        val spec = ScrollArrows.spec(direction, overrides, totalSize)
+        val stack = overrides.firstOrNull { it.direction == direction }?.item
+            ?.takeUnless { it == Item.Empty }
+            ?.build(player, context)?.clone()?.takeUnless { it.type.isAir }
+            ?: ItemStack(Material.ARROW)
+        stack.editMeta { it.displayName(spec.name.asMiniItem()) }
+        return GuiSlot(
+            x = spec.x,
+            y = spec.y,
+            item = stack,
+            commands = listOf(ScrollArrows.command(direction, layoutId)),
         )
     }
 
@@ -186,8 +217,21 @@ object LayoutParser {
                     }
                 }
 
-                // Default buttons removed — users must configure their own navigation buttons
-                // via the entry's layoutPool buttons list.
+                // Default arrows (showDefaultButtons): only for a direction the author did not
+                // cover with a button of their own; item, name and place come from gui_settings.
+                val missing = ScrollArrows.missingDirections(data.buttons.map { it.direction }, data.showDefaultButtons)
+                if (missing.isNotEmpty()) {
+                    val overrides = scrollArrowOverrides()
+                    missing.forEach { direction ->
+                        val arrow = defaultArrowSlot(player, context, direction, data.id, overrides, totalSize)
+                        when (direction) {
+                            ScrollDirection.UP -> up = arrow
+                            ScrollDirection.DOWN -> down = arrow
+                            ScrollDirection.LEFT -> left = arrow
+                            ScrollDirection.RIGHT -> right = arrow
+                        }
+                    }
+                }
 
                 ScrollableLayout(
                     layout = inner, 
