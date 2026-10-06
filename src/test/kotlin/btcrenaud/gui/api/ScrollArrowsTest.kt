@@ -83,6 +83,14 @@ class ScrollArrowsTest {
     }
 
     @Test
+    fun `the step is configurable and never below one`() {
+        assertEquals("gui:scroll 0 3 inv", ScrollArrows.command(ScrollDirection.DOWN, "inv", step = 3))
+        assertEquals("gui:scroll 0 -3 inv", ScrollArrows.command(ScrollDirection.UP, "inv", step = 3))
+        assertEquals("gui:scroll 0 1 inv", ScrollArrows.command(ScrollDirection.DOWN, "inv", step = 0))
+        assertEquals("gui:scroll -1 0 inv", ScrollArrows.command(ScrollDirection.LEFT, "inv", step = -4))
+    }
+
+    @Test
     fun `commands match the ones of the custom buttons`() {
         assertEquals("gui:scroll 0 -1 inv", ScrollArrows.command(ScrollDirection.UP, "inv"))
         assertEquals("gui:scroll 0 1 inv", ScrollArrows.command(ScrollDirection.DOWN, "inv"))

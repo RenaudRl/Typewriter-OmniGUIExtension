@@ -21,6 +21,9 @@ import java.util.logging.Logger
  */
 object SlotOverlay {
 
+    /** Tag of the default scroll arrows, the only slots that give way instead of competing. */
+    const val DEFAULT_ARROW_TAG = "omnigui:default_arrow"
+
     /** Overlaps already reported, so a re-render does not flood the console. */
     private val reported: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
@@ -50,7 +53,16 @@ object SlotOverlay {
      * @param menuId the menu id, used when logging an overlap
      * @param logger where warnings go; `null` resolves silently
      */
-    fun collapse(slots: List<GuiSlot>, menuId: String?, logger: Logger? = null): List<GuiSlot> {
+    fun collapse(allSlots: List<GuiSlot>, menuId: String?, logger: Logger? = null): List<GuiSlot> {
+        if (allSlots.size < 2) return allSlots
+        // A default scroll arrow never covers anything: it only exists on a free cell.
+        val slots = dropYielding(
+            allSlots,
+            xOf = { it.x },
+            yOf = { it.y },
+            yields = { it.tag == DEFAULT_ARROW_TAG },
+            occupies = { it is ReactiveSlot || !it.item.type.isAir },
+        )
         if (slots.size < 2) return slots
 
         val winners = LinkedHashMap<Long, GuiSlot>(slots.size)
@@ -72,6 +84,24 @@ object SlotOverlay {
         }
 
         return if (winners.size == slots.size) slots else winners.values.toList()
+    }
+
+    /**
+     * Drops every slot that [yields] when another slot that [occupies] its cell is present.
+     * The yielding slot is the one that gives way — never the content or the button it would
+     * have covered — and nothing is reported: a default arrow with no free cell is simply absent.
+     * Generic so the rule is unit-testable without Bukkit items.
+     */
+    internal fun <T> dropYielding(
+        slots: List<T>,
+        xOf: (T) -> Int,
+        yOf: (T) -> Int,
+        yields: (T) -> Boolean,
+        occupies: (T) -> Boolean,
+    ): List<T> {
+        if (slots.none(yields)) return slots
+        val taken = slots.filter { !yields(it) && occupies(it) }.mapTo(HashSet()) { coordKey(xOf(it), yOf(it)) }
+        return slots.filter { !yields(it) || coordKey(xOf(it), yOf(it)) !in taken }
     }
 
     private fun report(menuId: String?, x: Int, y: Int, kept: GuiSlot, logger: Logger?) {

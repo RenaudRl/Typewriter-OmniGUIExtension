@@ -700,8 +700,10 @@ data class ScrollableLayoutData(
     val virtualHeight: Int? = null,
     @Help("Scroll navigation buttons (up, down, left, right arrows). These are fixed outside the scrollable viewport.")
     val buttons: List<ScrollButtonData> = emptyList(),
-    @Help("If true, an arrow is added for every scroll direction that has no button of its own above (item, name and place can be changed in the gui_settings entry). Set to false for no arrows at all.")
-    val showDefaultButtons: Boolean = true
+    @Help("If true, an arrow is added for every scroll direction that has no button of its own above, only while the content can scroll that way and only on a cell with nothing else on it (item, name and place can be changed in the gui_settings entry). Set to false for no arrows at all.")
+    val showDefaultButtons: Boolean = true,
+    @Help("Number of slots/lines the default arrows scroll per click. Custom buttons use their own step. Minimum 1.")
+    val defaultStep: Int = 1
 ) : LayoutData
 
 /** Configuration for a scroll navigation button. */

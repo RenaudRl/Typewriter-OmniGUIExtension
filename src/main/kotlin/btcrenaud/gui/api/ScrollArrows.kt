@@ -66,11 +66,14 @@ object ScrollArrows {
         )
     }
 
-    /** Command run by an arrow of [direction], [step] slots per click. */
-    fun command(direction: ScrollDirection, layoutId: String, step: Int = 1): String = when (direction) {
-        ScrollDirection.UP -> "gui:scroll 0 -$step $layoutId"
-        ScrollDirection.DOWN -> "gui:scroll 0 $step $layoutId"
-        ScrollDirection.LEFT -> "gui:scroll -$step 0 $layoutId"
-        ScrollDirection.RIGHT -> "gui:scroll $step 0 $layoutId"
+    /** Command run by an arrow of [direction], [step] slots per click (at least 1). */
+    fun command(direction: ScrollDirection, layoutId: String, step: Int = 1): String {
+        val n = step.coerceAtLeast(1)
+        return when (direction) {
+            ScrollDirection.UP -> "gui:scroll 0 -$n $layoutId"
+            ScrollDirection.DOWN -> "gui:scroll 0 $n $layoutId"
+            ScrollDirection.LEFT -> "gui:scroll -$n 0 $layoutId"
+            ScrollDirection.RIGHT -> "gui:scroll $n 0 $layoutId"
+        }
     }
 }

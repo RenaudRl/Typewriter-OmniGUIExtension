@@ -78,6 +78,7 @@ object LayoutParser {
     /** The `gui_settings` arrow overrides; none when the entry does not exist or cannot be read. */
     private fun scrollArrowOverrides(): List<ScrollArrowConfig> =
         runCatching { Query.find<GuiSettingEntry>().firstOrNull()?.scrollArrows }
+            .onFailure { LOGGER.warning("[OmniGUI] gui_settings could not be read, default scroll arrows keep their built-in look: ${it.message}") }
             .getOrNull().orEmpty()
 
     private fun defaultArrowSlot(
@@ -87,6 +88,7 @@ object LayoutParser {
         layoutId: String,
         overrides: List<ScrollArrowConfig>,
         totalSize: Int,
+        step: Int,
     ): GuiSlot {
         val spec = ScrollArrows.spec(direction, overrides, totalSize)
         val stack = overrides.firstOrNull { it.direction == direction }?.item
@@ -98,7 +100,8 @@ object LayoutParser {
             x = spec.x,
             y = spec.y,
             item = stack,
-            commands = listOf(ScrollArrows.command(direction, layoutId)),
+            commands = listOf(ScrollArrows.command(direction, layoutId, step)),
+            tag = SlotOverlay.DEFAULT_ARROW_TAG,
         )
     }
 
@@ -223,7 +226,7 @@ object LayoutParser {
                 if (missing.isNotEmpty()) {
                     val overrides = scrollArrowOverrides()
                     missing.forEach { direction ->
-                        val arrow = defaultArrowSlot(player, context, direction, data.id, overrides, totalSize)
+                        val arrow = defaultArrowSlot(player, context, direction, data.id, overrides, totalSize, data.defaultStep)
                         when (direction) {
                             ScrollDirection.UP -> up = arrow
                             ScrollDirection.DOWN -> down = arrow

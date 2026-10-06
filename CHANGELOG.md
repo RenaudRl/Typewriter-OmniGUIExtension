@@ -8,8 +8,13 @@
   close, scroll, click) is taken from it, sound by sound; a sound set on the action still wins.
 - A scrollable layout with `showDefaultButtons` on now gets an arrow for every direction that has no
   button of its own (it was a no-op: the arrows were removed and never replaced). Off = no arrows.
+  `showDefaultButtons` is already on by default, so existing scrollable menus gain arrows: an arrow
+  only shows while the content can scroll that way, and never on a cell holding any other slot
+  (content, button or decoration) — it gives way instead of covering it. Set `showDefaultButtons`
+  to false, or move the arrow, to keep a menu exactly as it was.
   The new `gui_settings` `scrollArrows` list changes an arrow's item, name or place; unconfigured,
   arrows are plain arrow items on the right column (up, down) and the bottom row (left, right).
+  The new `defaultStep` field of the scrollable layout sets the slots scrolled per click.
 
 ## 0.18 — 2026-09-19
 
