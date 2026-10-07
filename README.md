@@ -1,15 +1,17 @@
 # Typewriter-OmniGUIExtension
 
-> Advanced menu system for Typewriter — 8 layout engines, 23 inventory types, persistent storage, and full MiniMessage support.
+> Advanced menu system for Typewriter — 10 layout engines, 24 inventory types, persistent storage, and full MiniMessage support.
 
-[![Paper](https://img.shields.io/badge/Paper-1.21.4-brightgreen)](https://papermc.io)
+![Java Version](https://img.shields.io/badge/Java-21-orange)
+![Target](https://img.shields.io/badge/Target-Paper-blue)
+![Typewriter](https://img.shields.io/badge/Typewriter-0.9.0--beta--177-purple)
 
 ## Overview
 
 **OmniGUIExtension** is the central menu system for the Typewriter ecosystem. It provides:
 
-- **11 layout engines** — Simple, Scrollable, Flex, Frame, Paginated, Composite, Book, Merchant, Storage, Leaderboard, Vanilla GUIs
-- **23 inventory types** — Chest, Anvil, Enchanting, Smithing, Merchant, Book, and more
+- **10 layout engines** — Simple, Scrollable, Flex, Frame, Paginated, Composite, Book, Merchant, Storage, Leaderboard
+- **24 inventory types** — Chest, Anvil, Enchanting, Smithing, Merchant, Book, and more (`GuiType`)
 - **Persistent item storage** — Per-player or group-based with accumulation/progress tracking
 - **Scrollable multi-frame dashboards** — Independent scrollable zones with custom navigation buttons
 - **Full MiniMessage formatting** — Colors, gradients, hover/click events in titles, names, and lore
@@ -31,7 +33,33 @@ without closing the inventory and can optionally participate in the history stac
 
 | Dependency | Required | Notes |
 |:---|:---|:---|
-| [Typewriter](https://github.com/gabber235/Typewriter) | ✓ | Engine 1.21.4-26.1.2+ |
+| [Typewriter](https://github.com/gabber235/Typewriter) | ✓ | Engine `0.9.0-beta-177`, Paper server |
+| PacketEvents | Only for `extendToPlayerInventory` | Already required by Typewriter |
+
+The extension is published as module `renaud:GuiAndDialogs`; other extensions (Shops, Quest Codex)
+declare it as a dependency.
+
+## Entries
+
+| Entry | Id | Role |
+|:---|:---|:---|
+| Open GUI | `open_gui` | Action that opens a menu (layouts, views, sounds) |
+| GUI Extension Configuration | `gui_config` | Extension-wide configuration |
+| GUI Global Settings | `gui_settings` | Default sounds (`audioDefaults`), default scroll arrows (`scrollArrows`), storage click bindings, skill tree connectors |
+| GUI Storage | `gui_storage` | Artifact backing the persistent `storage` slots |
+| GUI Leaderboard | `gui_leaderboard` | Fact-backed ranking source for `leaderboard` layouts |
+| GUI Leaderboard Population | `gui_leaderboard_population` | Artifact keeping the last known values of offline players |
+
+## Default sounds and scroll arrows
+
+- **`audioDefaults`** (`gui_settings`) is a fallback: a sound left empty on an `open_gui` action
+  (open, close, scroll, click) is taken from it, sound by sound. A sound set on the action always wins.
+- **Scrollable layouts** get default arrows while `showDefaultButtons` is on (the default): one per
+  scroll direction that has no `buttons` entry, shown only when the content can scroll that way and
+  never on an occupied cell. Set `showDefaultButtons` to `false` to get no arrows.
+- **`defaultStep`** (scrollable layout, minimum 1) sets how many slots or lines a default arrow scrolls.
+- **`scrollArrows`** (`gui_settings`) customizes the default arrows: each element has `direction`,
+  `item`, `name`, `x` and `y`; a field left empty keeps the default.
 
 ## Quick Start
 
@@ -196,15 +224,12 @@ Full documentation available at [BTC Studio Docs](https://docs.borntocraftstudio
 
 ## Integration
 
-OmniGUIExtension is a **required dependency** for Typewriter extensions that use menus. Extensions reference GUI entries by ID:
-
-```kotlin
-// In your extension's entry:
-val guiEntry = entryDB.get<OpenGuiActionEntry>("my_menu_id")
-MenuSessionService.open(player, guiEntry)
-```
+OmniGUIExtension (`renaud:GuiAndDialogs`) is a **required dependency** for Typewriter extensions
+that use menus. Menus are triggered from entries with the `open_gui` action.
 
 ## Building from Source
+
+Requires **Java 21**.
 
 ```bash
 git clone https://github.com/RenaudRl/Typewriter-OmniGUIExtension.git
