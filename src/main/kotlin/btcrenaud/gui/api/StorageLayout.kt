@@ -135,6 +135,7 @@ class StorageLayout(
 
     override fun getSlots(session: MenuSessionService.ActiveSession, viewport: Viewport): List<GuiSlot> {
         val groupKey = groupKeyProvider(session.player)
+        val texts = GuiTexts.settings()
         return slotConfigs.map { config ->
             val stored = GuiStorageService.getItem(entry, groupKey, config.slotIndex)
             val accumulated = if (config.requiredAmount > 0) {
@@ -144,14 +145,7 @@ class StorageLayout(
             val displayItem = if (config.requiredAmount > 0 && accumulated > 0) {
                 val progressItem = (stored ?: config.placeholder).clone()
                 val meta = progressItem.itemMeta
-                val progressBar = buildProgressBar(accumulated, config.requiredAmount)
-                meta.lore(listOf(
-                    net.kyori.adventure.text.Component.text()
-                        .append(net.kyori.adventure.text.Component.text("Progress: ", net.kyori.adventure.text.format.NamedTextColor.GRAY))
-                        .append(net.kyori.adventure.text.Component.text("$accumulated/${config.requiredAmount} ", net.kyori.adventure.text.format.NamedTextColor.WHITE))
-                        .append(progressBar)
-                        .build()
-                ))
+                meta.lore(listOf(GuiTexts.storageProgress(session.player, texts, accumulated, config.requiredAmount)))
                 progressItem.itemMeta = meta
                 progressItem
             } else {
@@ -180,14 +174,5 @@ class StorageLayout(
                 accumulated = accumulated
             )
         }
-    }
-
-    private fun buildProgressBar(current: Int, max: Int): net.kyori.adventure.text.Component {
-        val barLength = 10
-        val filled = (current.toDouble() / max * barLength).toInt().coerceIn(0, barLength)
-        return net.kyori.adventure.text.Component.text()
-            .append(net.kyori.adventure.text.Component.text("■".repeat(filled), net.kyori.adventure.text.format.NamedTextColor.GREEN))
-            .append(net.kyori.adventure.text.Component.text("■".repeat(barLength - filled), net.kyori.adventure.text.format.NamedTextColor.GRAY))
-            .build()
     }
 }

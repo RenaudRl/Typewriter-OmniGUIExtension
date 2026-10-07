@@ -4,8 +4,10 @@ import btcrenaud.gui.ScrollDirection
 import btcrenaud.gui.api.MenuAudioConfig
 import btcrenaud.gui.api.ScrollArrowPlacement
 import com.typewritermc.core.books.pages.Colors
+import com.typewritermc.core.extension.annotations.Colored
 import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.Help
+import com.typewritermc.core.extension.annotations.Min
 import com.typewritermc.engine.paper.entry.ManifestEntry
 import com.typewritermc.engine.paper.utils.item.Item
 import org.bukkit.event.inventory.ClickType
@@ -90,8 +92,49 @@ class GuiSettingEntry(
     val storageInteraction: StorageInteractionConfig = StorageInteractionConfig(),
 
     @Help("Skill Tree connector items. Add only the state and direction combinations that need a custom item.")
-    val nodeDefaults: List<NodeConnectorConfig> = emptyList()
+    val nodeDefaults: List<NodeConnectorConfig> = emptyList(),
+
+    @Help(
+        "Default texts the extension itself shows to players: the buttons of its dialogs and the " +
+            "progress line of storage slots that collect a required amount."
+    )
+    val texts: GuiTextSettings = GuiTextSettings(),
 ) : ManifestEntry
+
+/**
+ * Texts the extension shows on its own, outside any menu an author builds. Every field starts at
+ * the value the extension used before it became editable.
+ */
+data class GuiTextSettings(
+    @Help(
+        "Label of the button that validates an input dialog (the dialog with a text field). " +
+            "MiniMessage and PlaceholderAPI supported."
+    )
+    @Colored
+    val inputConfirmLabel: String = "Confirm",
+    @Help("Label of the confirm button of a yes/no dialog. MiniMessage and PlaceholderAPI supported.")
+    @Colored
+    val confirmLabel: String = "<green>Confirm",
+    @Help("Label of the cancel button of a yes/no dialog. MiniMessage and PlaceholderAPI supported.")
+    @Colored
+    val cancelLabel: String = "<red>Cancel",
+    @Help(
+        "Lore line of a storage slot that collects a required amount, shown once something was " +
+            "collected. Tokens: {current} (amount collected), {required} (amount to reach) and " +
+            "{bar} (the progress bar below). MiniMessage and PlaceholderAPI supported."
+    )
+    @Colored
+    val storageProgressLine: String = "<gray>Progress: <white>{current}/{required} {bar}",
+    @Help("One filled segment of the progress bar (MiniMessage). It is repeated once per filled step.")
+    @Colored
+    val progressBarFilled: String = "<green>■",
+    @Help("One empty segment of the progress bar (MiniMessage). It is repeated once per remaining step.")
+    @Colored
+    val progressBarEmpty: String = "<gray>■",
+    @Help("Number of segments of the progress bar.")
+    @Min(1)
+    val progressBarLength: Int = 10,
+)
 
 /**
  * One default scroll arrow override. A compact list keeps the Item blueprint out of the editor

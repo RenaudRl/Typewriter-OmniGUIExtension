@@ -991,7 +991,7 @@ object MenuSessionService : Listener {
                 .inputs(listOf(instances.textBuilder("input", Component.empty()).build()))
                 .build()
  
-            val confirmAction = ActionButton.builder(Component.text("Confirm"))
+            val confirmAction = ActionButton.builder(GuiTexts.inputConfirmLabel(player))
                 .action(instances.register({ response: DialogResponseView, _ ->
                     val input = response.getText("input") ?: ""
                     
@@ -1048,7 +1048,7 @@ object MenuSessionService : Listener {
                 .inputs(listOf(instances.textBuilder("input", Component.empty()).build()))
                 .build()
 
-            val confirmAction = ActionButton.builder(Component.text("Confirmer"))
+            val confirmAction = ActionButton.builder(GuiTexts.inputConfirmLabel(player))
                 .action(instances.register({ response: DialogResponseView, _ ->
                     val input = response.getText("input") ?: ""
                     player.scheduler.run(plugin, { _ -> onConfirm(input) }, null)
@@ -1067,8 +1067,8 @@ object MenuSessionService : Listener {
         player: Player,
         title: Component,
         body: Component,
-        confirmLabel: Component = Component.text("Confirm"),
-        cancelLabel: Component = Component.text("Cancel"),
+        confirmLabel: Component = GuiTexts.confirmLabel(player),
+        cancelLabel: Component = GuiTexts.cancelLabel(player),
         onConfirm: () -> Unit,
         onCancel: () -> Unit = {}
     ) {
@@ -1080,13 +1080,13 @@ object MenuSessionService : Listener {
                 .canCloseWithEscape(true)
                 .build()
 
-            val confirmAction = ActionButton.builder(confirmLabel.color(net.kyori.adventure.text.format.NamedTextColor.GREEN))
+            val confirmAction = ActionButton.builder(confirmLabel)
                 .action(instances.register({ _, _ ->
                     player.scheduler.run(plugin, { _ -> onConfirm() }, null)
                 }, net.kyori.adventure.text.event.ClickCallback.Options.builder().build()))
                 .build()
 
-            val cancelAction = ActionButton.builder(cancelLabel.color(net.kyori.adventure.text.format.NamedTextColor.RED))
+            val cancelAction = ActionButton.builder(cancelLabel)
                 .action(instances.register({ _, _ ->
                     player.scheduler.run(plugin, { _ -> onCancel() }, null)
                 }, net.kyori.adventure.text.event.ClickCallback.Options.builder().build()))
@@ -1104,7 +1104,7 @@ object MenuSessionService : Listener {
         player: Player,
         title: Component,
         inputs: List<DialogInput>,
-        confirmLabel: Component = Component.text("Confirm"),
+        confirmLabel: Component = GuiTexts.inputConfirmLabel(player),
         onConfirm: (Map<String, String>) -> Unit
     ) {
         val dialog = Dialog.create { builder ->

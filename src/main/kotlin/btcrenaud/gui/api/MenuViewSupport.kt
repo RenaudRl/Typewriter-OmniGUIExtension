@@ -25,7 +25,7 @@ import kotlinx.serialization.Serializable
  *
  * A *view* is one addressable screen of a menu: a domain tab, a sub-view of that domain,
  * or a leaf detail. Instead of one entry per screen (which forced every menu to duplicate
- * its whole chrome â€” tab strip, navigation row, dividers), a single entry declares its
+ * its whole chrome — tab strip, navigation row, dividers), a single entry declares its
  * [MenuViewData] list and the shell resolves the right layouts per frame at open time.
  *
  * ### How a frame picks its layout
@@ -33,8 +33,8 @@ import kotlinx.serialization.Serializable
  * A [btcrenaud.gui.FrameData] whose `layoutId` is [VIEW_FRAME_PLACEHOLDER] (`"@view"`) is
  * resolved against the active view, in this order:
  *
- * 1. `view.frames[frameId]` â€” explicit mapping on the view;
- * 2. `"${view.id}_$frameId"` â€” the naming convention (frame `content` + view `island`
+ * 1. `view.frames[frameId]` — explicit mapping on the view;
+ * 2. `"${view.id}_$frameId"` — the naming convention (frame `content` + view `island`
  *    resolves `island_content`);
  * 3. the same two lookups walked up [MenuViewData.parentId], so a sub-view inherits its
  *    parent's tab strip and action row without repeating them.
@@ -47,7 +47,7 @@ import kotlinx.serialization.Serializable
  * Slots tagged `view:<viewId>` (i.e. `buttonPrefix = "view:"`, `buttonType = "<viewId>"`)
  * are wired automatically: [ViewTabResolverLayout] appends `gui:view <viewId>` to their
  * commands, hides the tabs whose view is gated off, and applies [ViewActiveStyle] to the
- * tab of the active view and of each of its ancestors â€” so a leaf keeps its domain tab lit.
+ * tab of the active view and of each of its ancestors — so a leaf keeps its domain tab lit.
  */
 object MenuViewSupport {
 
@@ -119,7 +119,7 @@ object MenuViewSupport {
         val hidden = declared.filterNot { it.isVisibleTo(player, context) }.map { it.id }.toSet()
 
         // A requested view that simply does not exist used to fall through to the default in
-        // complete silence â€” which is exactly how a whole family of navigation bugs stayed
+        // complete silence — which is exactly how a whole family of navigation bugs stayed
         // indistinguishable from each other in game. An unknown id is a configuration mistake and
         // says so; a *hidden* id is not, it is the criteria doing their job.
         if (targetViewId != null && targetViewId.isNotBlank() && targetViewId !in byId) {
@@ -166,18 +166,18 @@ object MenuViewSupport {
     }
 
     /**
-     * Origine (x, y) de chaque layout du pool tel qu'il est effectivement posÃ© dans le chÃ¢ssis,
+     * Origine (x, y) de chaque layout du pool tel qu'il est effectivement posé dans le châssis,
      * pour la vue active.
      *
-     * Une extension qui injecte ses propres slots (tÃªtes de profil, cartes d'amis, membres d'un
-     * groupe) doit dÃ©caler leurs coordonnÃ©es de l'origine de la frame qui les contient, sinon
-     * elle dessine en coordonnÃ©es absolues et recouvre les bandeaux du menu.
+     * Une extension qui injecte ses propres slots (têtes de profil, cartes d'amis, membres d'un
+     * groupe) doit décaler leurs coordonnées de l'origine de la frame qui les contient, sinon
+     * elle dessine en coordonnées absolues et recouvre les bandeaux du menu.
      *
-     * Indexer naÃ¯vement `frame.layoutId -> frame.x/y` ne suffit pas : dans le chÃ¢ssis, trois
-     * frames sur quatre portent le layoutId littÃ©ral `"@view"`, elles s'Ã©crasent donc l'une
-     * l'autre sous une seule clÃ© et le vrai layout de contenu se retrouve sans origine â€” c'est
-     * ce qui faisait dessiner les profils en pleine fenÃªtre, par-dessus les onglets. La
-     * rÃ©solution passe donc par [resolveFrameLayoutId], exactement comme le rendu.
+     * Indexer naïvement `frame.layoutId -> frame.x/y` ne suffit pas : dans le châssis, trois
+     * frames sur quatre portent le layoutId littéral `"@view"`, elles s'écrasent donc l'une
+     * l'autre sous une seule clé et le vrai layout de contenu se retrouve sans origine — c'est
+     * ce qui faisait dessiner les profils en pleine fenêtre, par-dessus les onglets. La
+     * résolution passe donc par [resolveFrameLayoutId], exactement comme le rendu.
      */
     fun frameOrigins(
         mainLayoutId: String?,
@@ -210,7 +210,7 @@ object MenuViewSupport {
      * separator follows the BTC palette's separator colour so the trail reads at a glance.
      * See `BTC-Serveur-Documentation/Directives/couleurs.md`.
      */
-    const val DEFAULT_BREADCRUMB_SEPARATOR = "<#B76BFF> â–¸ </#B76BFF>"
+    const val DEFAULT_BREADCRUMB_SEPARATOR = "<#B76BFF> ▸ </#B76BFF>"
 
     /**
      * Merges a menu with the shared shell it inherits from.
@@ -233,7 +233,7 @@ object MenuViewSupport {
     ): InheritedMenu {
         // The chain is walked to its root, so a menu can inherit a domain template that itself
         // inherits the global shell. Resolving a single level would silently drop the shell's
-        // domain strip two levels down â€” a failure that only shows up in game.
+        // domain strip two levels down — a failure that only shows up in game.
         val chain = mutableListOf<btcrenaud.gui.OpenGuiActionEntry>()
         val seen = mutableSetOf<String>()
         var currentId = baseMenuId
@@ -276,7 +276,7 @@ object MenuViewSupport {
     /**
      * Parses [root], resolving [VIEW_FRAME_PLACEHOLDER] frames against [view].
      *
-     * Only the top-level frame layout carries view placeholders â€” nesting them deeper would
+     * Only the top-level frame layout carries view placeholders — nesting them deeper would
      * make a menu's structure depend on render order, which is exactly the kind of implicit
      * coupling the pool is meant to avoid.
      */
@@ -338,7 +338,7 @@ object MenuViewSupport {
         return null
     }
 
-    /** The active view and its ancestors, outermost first â€” the breadcrumb order. */
+    /** The active view and its ancestors, outermost first — the breadcrumb order. */
     private fun ancestry(view: MenuViewData?, views: Map<String, MenuViewData>): List<MenuViewData> {
         if (view == null) return emptyList()
         val chain = mutableListOf<MenuViewData>()
@@ -372,7 +372,7 @@ data class ResolvedMenuView(
 /**
  * One addressable screen of a menu.
  *
- * The [frames] map and the `"${id}_$frameId"` convention are interchangeable â€” use the
+ * The [frames] map and the `"${id}_$frameId"` convention are interchangeable — use the
  * convention for the common case and the map when a view reuses another view's layout.
  */
 @Serializable
@@ -394,7 +394,7 @@ data class MenuViewData(
     val viewPermission: String? = null,
     @Help("How this view's tab is rendered while it is the active one.")
     val activeStyle: ViewActiveStyle = ViewActiveStyle(),
-    @Help("Internal web-editor id. Managed automatically â€” do not edit.")
+    @Help("Internal web-editor id. Managed automatically — do not edit.")
     val editorId: String? = null,
 ) {
     fun label(): String = name.ifBlank { id }
@@ -408,7 +408,7 @@ data class MenuViewData(
 /**
  * Visual treatment of the tab belonging to the active view.
  *
- * Every field is opt-in so a page decides how "active" looks â€” the previous hard-coded
+ * Every field is opt-in so a page decides how "active" looks — the previous hard-coded
  * enchantment glint was invisible to page authors and impossible to restyle.
  */
 @Serializable
@@ -456,7 +456,7 @@ data class ViewActiveStyle(
 /**
  * Wires and styles the `view:<id>` tagged slots of [inner].
  *
- * Runs outermost so it sees the slots produced by every nested layout â€” including the
+ * Runs outermost so it sees the slots produced by every nested layout — including the
  * scrollable tab strips, whose visible window changes between renders.
  */
 class ViewTabResolverLayout(
@@ -486,7 +486,7 @@ class ViewTabResolverLayout(
         // Auto-wiring is a convenience, not a rule: a tab that already carries its own
         // navigation keeps it. This is what lets the shared domain strip highlight the active
         // domain via its `view:` tag while actually jumping to another extension's entry with
-        // `gui:open` â€” appending `gui:view` there would fire both navigations at once.
+        // `gui:open` — appending `gui:view` there would fire both navigations at once.
         val wired = if (slot.declaresNavigation()) slot
         else slot.copy(commands = slot.commands + "gui:view $viewId")
 
@@ -495,7 +495,7 @@ class ViewTabResolverLayout(
     }
 
     /**
-     * True when the slot already routes somewhere on its own â€” whether on the slot's own
+     * True when the slot already routes somewhere on its own — whether on the slot's own
      * command list (scroll/pagination wiring) or inside one of its per-click interactions,
      * which is where a page's `interactionList` ends up.
      */
