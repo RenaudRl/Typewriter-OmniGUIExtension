@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.19 — 2026-10-08
 
 ### Fields that were in the panel but not read
 
