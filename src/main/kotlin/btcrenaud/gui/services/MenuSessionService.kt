@@ -199,6 +199,8 @@ object MenuSessionService : Listener {
             // and GuiCloseEvent fires. Its close sound is skipped on purpose — the incoming
             // menu's open sound covers the transition.
             processTemporaryStorageSlots(player, current)
+            // Replacing a menu repaints its cells, which would erase loot the player has not taken.
+            releaseCloseDeliveries(player, current, current.currentInventory)
             btcrenaud.gui.api.GuiCloseEvent(player, current.definition).callEvent()
         }
 
@@ -1193,6 +1195,7 @@ object MenuSessionService : Listener {
             }
             // The top window is a plain 54-slot container here; clearing it would be pointless,
             // and the bottom band never held real items to give back.
+            releaseCloseDeliveries(player, session, event.inventory)
             processStorageOnClose(player, session)
             activeSessions.remove(player.uniqueId)
             session.refreshTask?.cancel()
@@ -1228,6 +1231,8 @@ object MenuSessionService : Listener {
         if (isTradeGui) {
             returnMerchantInputs(player, event.view.topInventory)
         } else {
+            // Before the clear, which would erase what is being handed back.
+            releaseCloseDeliveries(player, session, event.inventory)
             event.inventory.clear()
         }
 
@@ -1304,6 +1309,7 @@ object MenuSessionService : Listener {
         if (guiType == btcrenaud.gui.GuiType.VILLAGER_TRADE || guiType == btcrenaud.gui.GuiType.MERCHANT) {
             returnMerchantInputs(event.player, event.player.openInventory.topInventory)
         }
+        releaseCloseDeliveries(event.player, session, session.currentInventory)
         processStorageOnClose(event.player, session)
         btcrenaud.gui.api.GuiCloseEvent(event.player, session.definition).callEvent()
     }
@@ -1355,6 +1361,39 @@ object MenuSessionService : Listener {
                     slot.temporaryTriggers.triggerEntriesFor(player, context())
                 }
             }
+        }
+    }
+
+    /**
+     * Hands back what still sits in the cells of `dropOnClose` layouts (see [CloseDeliveryPlan]).
+     *
+     * Each cell is emptied BEFORE its item is delivered and is only read from the live inventory,
+     * so an item the player already took is not there to be delivered, and a close that is replayed
+     * finds nothing left: an item is handed over once, never twice.
+     */
+    private fun releaseCloseDeliveries(
+        player: Player,
+        session: ActiveSession,
+        inventory: org.bukkit.inventory.Inventory?,
+    ) {
+        if (inventory == null) return
+        val slots = session.definition.layout.getSlots(session, session.viewport)
+        if (slots.none { it.closeDelivery != null }) return
+
+        val cells = SlotOverlay.collapse(slots, session.definition.id).map { slot ->
+            CloseDeliveryPlan.Cell(slot.x, slot.y, slot.allowPickup, slot.isGhost, slot.closeDelivery)
+        }
+        val releases = CloseDeliveryPlan.plan(cells, session.viewport.x, session.viewport.y, inventory.size)
+        for (release in releases) {
+            val item = inventory.getItem(release.index)
+            if (item == null || item.type.isAir) continue
+            inventory.setItem(release.index, null)
+            CloseDeliveryPlan.deliver(
+                item,
+                release.delivery,
+                give = { stack -> player.inventory.addItem(stack).values.toList() },
+                drop = { stack -> player.world.dropItemNaturally(player.location, stack) },
+            )
         }
     }
 

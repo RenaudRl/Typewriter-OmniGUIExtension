@@ -391,7 +391,14 @@ open class GuiSlot(
      * provider runs on every render, for every slot that has one.
      */
     @Transient
-    val itemProvider: ((org.bukkit.entity.Player) -> org.bukkit.inventory.ItemStack)? = null
+    val itemProvider: ((org.bukkit.entity.Player) -> org.bukkit.inventory.ItemStack)? = null,
+    /**
+     * Opt-in to having whatever still sits in this cell handed back when the menu closes
+     * (see [CloseDeliveryPlan]). `null` = the cell is erased with the menu, as before. Never acted
+     * on for a cell the player cannot take from.
+     */
+    @Transient
+    val closeDelivery: CloseDelivery? = null
 ) {
     open fun copy(
         x: Int = this.x,
@@ -409,8 +416,9 @@ open class GuiSlot(
         cooldownTicks: Long = this.cooldownTicks,
         tag: String? = this.tag,
         onClick: ((org.bukkit.entity.Player, InteractionType) -> Unit)? = this.onClick,
-        itemProvider: ((org.bukkit.entity.Player) -> org.bukkit.inventory.ItemStack)? = this.itemProvider
-    ) = GuiSlot(x, y, item, allowPickup, isGhost, commands, triggers, modifiers, interactions, input, storage, animation, cooldownTicks, tag, onClick, itemProvider)
+        itemProvider: ((org.bukkit.entity.Player) -> org.bukkit.inventory.ItemStack)? = this.itemProvider,
+        closeDelivery: CloseDelivery? = this.closeDelivery
+    ) = GuiSlot(x, y, item, allowPickup, isGhost, commands, triggers, modifiers, interactions, input, storage, animation, cooldownTicks, tag, onClick, itemProvider, closeDelivery)
 }
 
 data class SlotAnimation(

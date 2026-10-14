@@ -32,6 +32,7 @@ import com.typewritermc.engine.paper.utils.item.components.ItemMaterialComponent
 import org.bukkit.Material
 import btcrenaud.gui.api.MenuAudioConfig
 import btcrenaud.gui.api.InteractionType
+import btcrenaud.gui.api.nameOverride
 import btcrenaud.gui.api.permits
 import btcrenaud.gui.api.Viewport
 import btcrenaud.gui.api.StorageGuiSlot
@@ -309,6 +310,8 @@ data class GuiItemData(
     val gap: Int = 1,
     @Help("How many times the whole repetition repeats on the axis PERPENDICULAR to 'direction' — vertically for right/left, horizontally for down/up. A number of ROWS of slots, not a stack size.")
     val repeatY: Int = 1,
+    @Help("Only matters when this item repeats over several slots and its 'item' is random (a variable backed by a ranged or case variable). Off = the item is rolled once and every repeated slot shows that same result. On = each repeated slot rolls the item on its own when the menu opens; the result is then kept for as long as the menu stays open.")
+    val rollPerSlot: Boolean = false,
 ) {
     fun toSlot(
         player: Player,
@@ -373,7 +376,7 @@ object GuiSlotBuilder {
             }
             val meta = stack.itemMeta
             if (meta != null) {
-                data.displayName?.get(player, context)?.let {
+                nameOverride(data.displayName?.get(player, context))?.let {
                     meta.displayName(it.parsePlaceholders(player).asMiniItem())
                 }
                 data.lore.map { it.get(player, context).parsePlaceholders(player).asMiniItem() }
@@ -411,18 +414,24 @@ object GuiSlotBuilder {
             ))
         }
         
-        // Kept as a function so a live menu can run it again on every render: the parsed layout
-        // holds one immutable slot list, so a name or lore built only here would never change.
-        fun buildStack(target: Player): org.bukkit.inventory.ItemStack {
+        // The only place the item is drawn: a Var<Item> may be random, every call is a new draw.
+        fun rollBase(target: Player): org.bukkit.inventory.ItemStack {
             val resolved = data.item.get(target, context)
-            val stack = if (resolved == Item.Empty) {
+            return if (resolved == Item.Empty) {
                 target.inventory.itemInMainHand.clone()
             } else {
                 resolved.build(target, context)
             }
+        }
+
+        // Name and lore on a copy of an already drawn item. Kept as a function so a live menu can
+        // run it again on every render: the parsed layout holds one immutable slot list, so a name
+        // or lore built only here would never change. A blank name is no name (see nameOverride).
+        fun decorate(base: org.bukkit.inventory.ItemStack, target: Player): org.bukkit.inventory.ItemStack {
+            val stack = base.clone()
             val meta = stack.itemMeta
             if (meta != null) {
-                data.displayName?.get(target, context)?.let {
+                nameOverride(data.displayName?.get(target, context))?.let {
                     meta.displayName(it.parsePlaceholders(target).asMiniItem())
                 }
                 data.lore.map { it.get(target, context).parsePlaceholders(target).asMiniItem() }
@@ -433,7 +442,15 @@ object GuiSlotBuilder {
             return stack
         }
 
-        val stack = buildStack(player)
+        fun buildStack(target: Player): org.bukkit.inventory.ItemStack = decorate(rollBase(target), target)
+
+        val positions = expandPositions(data)
+        // One draw per cell when rollPerSlot is on, else one draw shared by all cells. Taken once,
+        // here: a render only decorates these draws, it never rolls again.
+        val rolls = btcrenaud.gui.api.SlotRoll.draw(positions.size, data.rollPerSlot) { rollBase(player) }
+        val sharedStack = if (data.rollPerSlot) null else rolls.firstOrNull()?.let { decorate(it, player) }
+        // Only a name or lore that can actually change pays for a rebuild on every render.
+        val rebuildsOnRender = nameOverride(data.displayName?.get(player, context)) != null || data.lore.isNotEmpty()
 
         val allInteractions = data.interactionList.associate { interactionData ->
             val cmds = interactionData.commands.map { it.get(player, context).parsePlaceholders(player) }.toMutableList()
@@ -445,9 +462,9 @@ object GuiSlotBuilder {
             )
         }
 
-        val positions = expandPositions(data)
-
-        return positions.map { (px, py) ->
+        return positions.mapIndexed { cell, (px, py) ->
+            val rolled = rolls[cell]
+            val stack = sharedStack ?: decorate(rolled, player)
             val baseSlot = btcrenaud.gui.api.GuiSlot(
                 x = px,
                 y = py,
@@ -471,13 +488,17 @@ object GuiSlotBuilder {
                 // Only slots whose text can actually change carry the cost of a rebuild. Tagged
                 // buttons are deliberately excluded (they never reach here): a resolver replaces
                 // their item, and re-running the author's build would overwrite what it injected.
-                itemProvider = if (data.displayName != null || data.lore.isNotEmpty()) {
-                    { target -> buildStack(target) }
-                } else null,
+                // The author's own build re-rolls the item, which suits an item that is meant to
+                // change; a rollPerSlot cell keeps its draw and only has its text refreshed.
+                itemProvider = when {
+                    !rebuildsOnRender -> null
+                    data.rollPerSlot -> { target -> decorate(rolled, target) }
+                    else -> { target -> buildStack(target) }
+                },
             )
             val storage = data.storageId?.let(storagePool::get)
             if (storage != null) {
-                val entry = storage.entry.get() ?: return@map baseSlot
+                val entry = storage.entry.get() ?: return@mapIndexed baseSlot
                 val groupEntry = storage.group.get()
                 val groupKey = groupEntry?.groupId(player)?.id ?: player.uniqueId.toString()
                 val placeholderStack = storage.placeholder?.get(player, context)?.build(player, context) ?: org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR)
@@ -630,7 +651,11 @@ data class SimpleLayoutData(
     @Help("Unique identifier for this layout. Used by mainLayoutId and frame references.")
     override val id: String = "",
     @Help("List of items to display in this layout.")
-    val items: List<GuiItemData> = emptyList()
+    val items: List<GuiItemData> = emptyList(),
+    @Help("When the menu closes, hand back whatever still sits in this layout's slots that the player can take from (allowPickup): loot they did not pick up, or an item they put there. Slots with allowPickup off are decoration and are never handed back. Off = the contents vanish with the menu.")
+    val dropOnClose: Boolean = false,
+    @Help("How the contents are handed back when dropOnClose is on. GIVE_OR_DROP: into the player's inventory, the surplus falls at their feet when it is full. DROP: everything falls at their feet.")
+    val closeDelivery: btcrenaud.gui.api.CloseDelivery = btcrenaud.gui.api.CloseDelivery.GIVE_OR_DROP,
 ) : LayoutData
 
 /** A layout that positions slots with a configurable flex-like row algorithm. */

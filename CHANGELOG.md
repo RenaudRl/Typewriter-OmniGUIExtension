@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.20 — 2026-10-15
+
+### Fixes
+
+- A blank `displayName` is no longer applied as an item name. The panel serializes an unset name as
+  `""`, which put an empty `custom_name` on the item and hid its `item_name` / vanilla name. A blank
+  name now leaves the item's own name untouched. Side effect, intended: a slot whose only text was a
+  blank name no longer rebuilds its item on every render, so a random item (a variable backed by a
+  ranged or case variable) is drawn once when the menu opens instead of re-drawn per cell.
+
+### New, all off by default (existing menus behave as before)
+
+- `rollPerSlot` on an item: for an item repeated over several slots with a random `item`, each slot
+  rolls on its own when the menu opens (off = one roll shared by every slot). The result is kept for
+  the whole time the menu is open, including across `autoRefreshTicks` refreshes.
+- `dropOnClose` and `closeDelivery` (`GIVE_OR_DROP` or `DROP`) on a `simple` layout: when the menu
+  closes, what still sits in its slots that have `allowPickup` (loot not taken, or an item the player
+  put there) is handed back instead of vanishing. `GIVE_OR_DROP` goes into the inventory and drops the
+  surplus at the player's feet; `DROP` drops everything. Slots without `allowPickup` are never handed
+  back, and an item is handed back once. Also applies when a menu is replaced by another one.
+  The editor warns when `dropOnClose` is on but no item allows pickup.
+
 ## 0.19 — 2026-10-08
 
 ### Fields that were in the panel but not read

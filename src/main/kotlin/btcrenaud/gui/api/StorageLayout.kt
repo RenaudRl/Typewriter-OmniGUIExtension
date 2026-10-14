@@ -82,7 +82,10 @@ class StorageGuiSlot(
         onClick: ((org.bukkit.entity.Player, btcrenaud.gui.api.InteractionType) -> Unit)?,
         // A storage slot shows the player's own stored items, never an author-built visual, so
         // the render-time rebuild hook is accepted for signature parity and deliberately dropped.
-        itemProvider: ((org.bukkit.entity.Player) -> ItemStack)?
+        itemProvider: ((org.bukkit.entity.Player) -> ItemStack)?,
+        // Storage cells follow their own close rule (StorageSlotData.dropOnClose); the generic
+        // cell delivery does not apply to them, so it is dropped like the provider.
+        closeDelivery: CloseDelivery?
     ): StorageGuiSlot {
         return StorageGuiSlot(
             x = x, y = y, item = item,

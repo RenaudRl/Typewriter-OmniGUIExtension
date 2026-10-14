@@ -738,6 +738,20 @@ object MenuValidationService {
         val width = bounds.width
         val maxRows = bounds.maxRows
 
+        // dropOnClose only hands back what the player can take: with no pickup slot it does nothing.
+        val dropsOnClose = layout.value.get("dropOnClose")?.takeIf { it.isJsonPrimitive }?.asBoolean == true
+        val hasPickupItem = items.any { el ->
+            el.isJsonObject && el.asJsonObject.get("allowPickup")?.takeIf { it.isJsonPrimitive }?.asBoolean == true
+        }
+        if (dropsOnClose && !hasPickupItem) {
+            issues += Issue(
+                Severity.WARNING, "layout.dropOnClose.noPickup",
+                "Layout '${layout.id}': 'dropOnClose' is on but no item has 'allowPickup', so " +
+                    "there is never anything to hand back (decoration slots are not handed back).",
+                path = layout.path,
+            )
+        }
+
         items.forEachIndexed { index, itemEl ->
             val item = itemEl.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEachIndexed
             val itemPath = "${layout.path}.items[$index]"

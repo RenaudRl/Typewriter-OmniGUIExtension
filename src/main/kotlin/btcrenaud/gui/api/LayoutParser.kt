@@ -54,6 +54,17 @@ object LayoutParser {
         return kept
     }
 
+    /**
+     * Marks the slots of a `dropOnClose` layout so the session hands their contents back on close.
+     * Storage slots are left alone: they already follow their own `dropOnClose` rule.
+     */
+    private fun withCloseDelivery(slots: List<GuiSlot>, data: SimpleLayoutData): List<GuiSlot> {
+        if (!data.dropOnClose) return slots
+        return slots.map { slot ->
+            if (slot is StorageGuiSlot) slot else slot.copy(closeDelivery = data.closeDelivery)
+        }
+    }
+
     private fun reportRejection(layoutId: String, x: Int, y: Int, width: Int) {
         if (reportedRejections.size >= MAX_REPORTED_REJECTIONS) return
         val layout = layoutId.ifBlank { "<unnamed>" }
@@ -126,7 +137,10 @@ object LayoutParser {
         visited.add(layoutKey)
         val result = when (data) {
             is SimpleLayoutData -> SimpleLayout(
-                slots = buildSlots(player, context, guiType, totalSize, data.items, width, storagePool, data.id),
+                slots = withCloseDelivery(
+                    buildSlots(player, context, guiType, totalSize, data.items, width, storagePool, data.id),
+                    data,
+                ),
                 id = data.id
             )
             is FlexLayoutData -> FlexLayout(
