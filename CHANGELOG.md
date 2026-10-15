@@ -6,9 +6,12 @@
 
 - A blank `displayName` is no longer applied as an item name. The panel serializes an unset name as
   `""`, which put an empty `custom_name` on the item and hid its `item_name` / vanilla name. A blank
-  name now leaves the item's own name untouched. Side effect, intended: a slot whose only text was a
-  blank name no longer rebuilds its item on every render, so a random item (a variable backed by a
-  ranged or case variable) is drawn once when the menu opens instead of re-drawn per cell.
+  name now leaves the item's own name untouched, and a name that turns blank or non-blank later
+  (a variable) is followed on every refresh. Side effect, intended: a random item (a variable backed
+  by a ranged or case variable) is drawn once when the menu opens instead of re-drawn per cell on every
+  refresh; only the name and lore are rebuilt after that.
+- A pickup slot the player has emptied is no longer repainted by a refresh, so the item they took is not
+  shown again and handed back a second time when the menu closes.
 
 ### New, all off by default (existing menus behave as before)
 

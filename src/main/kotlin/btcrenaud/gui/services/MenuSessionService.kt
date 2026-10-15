@@ -520,13 +520,16 @@ object MenuSessionService : Listener {
                         top.size == (session.definition.size?.slots ?: 54)))
 
             if (sameInventory) {
-                // Differential repaint: only touch slots whose item actually changed.
-                for (index in (session.lastSlots.keys + newItems.keys)) {
-                    val newItem = newItems[index]
-                    if (newItem != session.lastSlots[index]) {
-                        top.setItem(index, newItem)
-                    }
+                // Differential repaint: only touch slots whose item actually changed, and never
+                // put back an item the player took from a pickup cell (it would be handed to
+                // them a second time on close). Storage cells repaint from their own store.
+                val pickupIndices = physicalSlots
+                    .filter { (_, data) -> data.first.allowPickup && !data.first.isGhost && data.first !is btcrenaud.gui.api.StorageGuiSlot }
+                    .keys
+                val writes = btcrenaud.gui.api.RepaintPlan.changes(session.lastSlots, newItems, pickupIndices) { index ->
+                    top.getItem(index)?.type?.isAir != false
                 }
+                for ((index, item) in writes) top.setItem(index, item)
                 player.updateInventory()
                 session.isTransitioning = false
             } else {

@@ -310,7 +310,7 @@ data class GuiItemData(
     val gap: Int = 1,
     @Help("How many times the whole repetition repeats on the axis PERPENDICULAR to 'direction' — vertically for right/left, horizontally for down/up. A number of ROWS of slots, not a stack size.")
     val repeatY: Int = 1,
-    @Help("Only matters when this item repeats over several slots and its 'item' is random (a variable backed by a ranged or case variable). Off = the item is rolled once and every repeated slot shows that same result. On = each repeated slot rolls the item on its own when the menu opens; the result is then kept for as long as the menu stays open.")
+    @Help("Only matters when this item repeats over several slots and its 'item' is random (a variable backed by a ranged or case variable). Off = the item is rolled once and every repeated slot shows that same result. On = each repeated slot rolls the item on its own when the menu opens; the result is then kept for as long as the menu stays open. Off, even with a lore that refreshes, still means ONE draw for the whole session: the text refreshes, the item is never rolled again.")
     val rollPerSlot: Boolean = false,
 ) {
     fun toSlot(
@@ -442,15 +442,11 @@ object GuiSlotBuilder {
             return stack
         }
 
-        fun buildStack(target: Player): org.bukkit.inventory.ItemStack = decorate(rollBase(target), target)
-
         val positions = expandPositions(data)
         // One draw per cell when rollPerSlot is on, else one draw shared by all cells. Taken once,
         // here: a render only decorates these draws, it never rolls again.
         val rolls = btcrenaud.gui.api.SlotRoll.draw(positions.size, data.rollPerSlot) { rollBase(player) }
         val sharedStack = if (data.rollPerSlot) null else rolls.firstOrNull()?.let { decorate(it, player) }
-        // Only a name or lore that can actually change pays for a rebuild on every render.
-        val rebuildsOnRender = nameOverride(data.displayName?.get(player, context)) != null || data.lore.isNotEmpty()
 
         val allInteractions = data.interactionList.associate { interactionData ->
             val cmds = interactionData.commands.map { it.get(player, context).parsePlaceholders(player) }.toMutableList()
@@ -485,16 +481,12 @@ object GuiSlotBuilder {
                     btcrenaud.gui.api.SlotAnimation(anim.targetX, anim.targetY, anim.duration, anim.easing)
                 },
                 cooldownTicks = data.cooldownTicks,
-                // Only slots whose text can actually change carry the cost of a rebuild. Tagged
-                // buttons are deliberately excluded (they never reach here): a resolver replaces
-                // their item, and re-running the author's build would overwrite what it injected.
-                // The author's own build re-rolls the item, which suits an item that is meant to
-                // change; a rollPerSlot cell keeps its draw and only has its text refreshed.
-                itemProvider = when {
-                    !rebuildsOnRender -> null
-                    data.rollPerSlot -> { target -> decorate(rolled, target) }
-                    else -> { target -> buildStack(target) }
-                },
+                // Every cell refreshes, because the name (a Var that may turn blank) and the lore can
+                // change after the menu opens. Only the text is rebuilt, on the draw kept since
+                // opening: rollPerSlot off or on, the item is never rolled again. Tagged buttons are
+                // deliberately excluded (they never reach here): a resolver replaces their item, and
+                // re-running the author's build would overwrite what it injected.
+                itemProvider = btcrenaud.gui.api.SlotRoll.refresher(rolled, ::decorate),
             )
             val storage = data.storageId?.let(storagePool::get)
             if (storage != null) {

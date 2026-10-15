@@ -25,4 +25,12 @@ object SlotRoll {
         }
         return List(cells) { roll() }
     }
+
+    /**
+     * What a live menu runs on every render for one cell: [decorate] applied to the draw it kept
+     * since opening. It never rolls, so the draw stays frozen for the session whatever
+     * `rollPerSlot` says, and it is built for every cell, because whether a name or lore exists
+     * can change between two renders (a variable that turns blank, a lore added by a placeholder).
+     */
+    fun <T, P> refresher(drawn: T, decorate: (T, P) -> T): (P) -> T = { target -> decorate(drawn, target) }
 }
