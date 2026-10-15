@@ -78,6 +78,22 @@ class LeaderboardSourceTest {
     }
 
     @Test
+    fun `equal scores are ordered by the raw name, not by its escaped form`() {
+        // Escaped, "<red>" becomes "\<red>" and sorts after "[z" ('\' follows '['); raw, '<' sorts before '['.
+        val ranked = rank(listOf(row("a", "[z", 5), row("b", "<red>", 5)), LeaderboardOrder.DESCENDING)
+
+        assertEquals(listOf("<red>", "[z"), ranked.map { it.name })
+    }
+
+    @Test
+    fun `escaping happens when a row is shown, so a row cut by the limit is never escaped`() {
+        val ranked = rank(listOf(row("a", "<red>a", 3), row("b", "<red>b", 2)), LeaderboardOrder.DESCENDING, limit = 1)
+
+        assertEquals(listOf("<red>a"), ranked.map { it.name }, "the ranking works on the plain text")
+        assertEquals("\\<red>a", ranked.single().tokens(1)["{name}"], "the displayed row is escaped")
+    }
+
+    @Test
     fun `a source row speaks about its player when it has one`() {
         val rows = LeaderboardService.rowsFromSource("test") { listOf(row("a", playerId = alice), row("b")) }
 

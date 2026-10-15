@@ -52,7 +52,7 @@ sealed interface LeaderboardRowKey {
 /**
  * A rendered row using Typewriter's native world and group identifiers.
  * [scoreText] is what `{score}` shows (a fact row shows its number as is); [values] are the `{value_<key>}` tokens.
- * Texts coming from a source are already escaped for MiniMessage.
+ * Texts coming from a source stay plain; [tokens] escapes them for MiniMessage when the row is shown.
  */
 data class LeaderboardRow(
     val key: LeaderboardRowKey,
@@ -285,30 +285,32 @@ internal fun LeaderboardRow.subjectUuid(): UUID? = when (key) {
     is LeaderboardRowKey.World, is LeaderboardRowKey.Group -> null
 }
 
-/**
- * Texts of a source come from its data, possibly typed by players (names, profile labels): they are escaped
- * so that no tag in them can restyle the menu, whatever the source did.
- */
+/** A source row keeps its plain texts: they are ranked as they are, and escaped by [tokens] only for the rows that get shown. */
 internal fun LeaderboardSourceRow.toRow(): LeaderboardRow = LeaderboardRow(
     key = LeaderboardRowKey.Source(key, playerId),
-    name = escapeMini(name),
+    name = name,
     score = score,
-    scoreText = escapeMini(scoreText),
-    values = values.mapValues { escapeMini(it.value) },
+    scoreText = scoreText,
+    values = values,
 )
 
 private fun escapeMini(text: String): String = MiniMessage.miniMessage().escapeTags(text)
 
+/**
+ * The tokens of a displayed row. The texts of a source come from its data, possibly typed by players (names, profile labels): they are
+ * escaped here so that no tag in them can restyle the menu, whatever the source did.
+ */
 internal fun LeaderboardRow.tokens(rank: Int): Map<String, String> = buildMap {
+    val text: (String) -> String = if (key is LeaderboardRowKey.Source) ::escapeMini else { plain -> plain }
     put("{rank}", rank.toString())
-    put("{name}", name)
-    put("{score}", scoreText)
+    put("{name}", text(name))
+    put("{score}", text(scoreText))
     put("{score_raw}", score.toString())
     put("{group}", groupId?.id.orEmpty())
     put("{world}", world?.let { it.displayTokenName() }.orEmpty())
     factScores.forEach { (factId, value) -> put("{score_$factId}", value.toString()) }
     // Explicit receiver: inside buildMap a bare `values` is the map being built.
-    this@tokens.values.forEach { (valueKey, value) -> put("{value_$valueKey}", value) }
+    this@tokens.values.forEach { (valueKey, value) -> put("{value_$valueKey}", text(value)) }
 }
 
 private fun World.displayTokenName(): String = runCatching {
