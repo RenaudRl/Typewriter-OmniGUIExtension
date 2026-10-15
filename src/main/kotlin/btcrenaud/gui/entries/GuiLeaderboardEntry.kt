@@ -30,6 +30,8 @@ import com.typewritermc.core.utils.point.Position
 class GuiLeaderboardEntry(
     override val id: String = "",
     override val name: String = "",
+    @Help("When set, rows come from this source (another extension's statistics, every player online or not); facts, scope, group, population, worlds and scoreMode are not used. order, limit, includeZero and the row texts still apply.")
+    val source: Ref<GuiLeaderboardSourceEntry> = emptyRef(),
     @Help("Facts whose values are aggregated into the row score.")
     val facts: List<Ref<ReadableFactEntry>> = emptyList(),
     @Help("Rows are individual players, worlds, or Typewriter groups.")
@@ -50,10 +52,10 @@ class GuiLeaderboardEntry(
     val includeZero: Boolean = false,
     @Help("Item displayed for every ranked row. Empty uses PAPER.")
     val rowItem: Var<Item> = ConstVar(Item.Empty),
-    @Help("Row name. Tokens: {rank}, {name}, {score}, {group}, {world}.")
+    @Help("Row name. Tokens: {rank}, {name}, {score}, {group}, {world}; with a source also {score_raw} and {value_<key>}.")
     @Colored
     val rowName: Var<String> = ConstVar("<white>{rank}. {name}"),
-    @Help("Row lore. Supports the same tokens as rowName and {score_<fact_id>} for individual facts.")
+    @Help("Row lore. Supports the same tokens as rowName and {score_<fact_id>} for individual facts, or {value_<key>} for the values of a source.")
     @Colored @MultiLine
     val rowLore: List<Var<String>> = listOf(ConstVar("<gray>Score: <white>{score}"))
 ) : ManifestEntry

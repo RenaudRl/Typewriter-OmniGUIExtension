@@ -1,6 +1,7 @@
 package btcrenaud.gui.api
 
 import btcrenaud.gui.entries.GuiLeaderboardEntry
+import btcrenaud.gui.entries.LeaderboardSourceRow
 import btcrenaud.gui.services.LeaderboardPopulationSnapshot
 import btcrenaud.gui.services.LeaderboardPopulationStore
 import btcrenaud.gui.services.MenuSessionService
@@ -11,6 +12,7 @@ import com.typewritermc.engine.paper.entry.entries.ReadableFactEntry
 import com.typewritermc.engine.paper.utils.asMini
 import com.typewritermc.engine.paper.utils.item.Item
 import net.kyori.adventure.text.format.TextDecoration
+import net.kyori.adventure.text.minimessage.MiniMessage
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.entity.Player
@@ -18,6 +20,7 @@ import org.bukkit.inventory.ItemStack
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.logging.Level
 import java.util.logging.Logger
 
 enum class LeaderboardScope { PLAYER, WORLD, GROUP }
@@ -39,18 +42,29 @@ sealed interface LeaderboardRowKey {
     data class Group(val groupId: GroupId) : LeaderboardRowKey {
         override val stableKey: String = "group:${groupId.id}"
     }
+
+    /** A row supplied by a [GuiLeaderboardSourceEntry]; [playerId] is the player it speaks about, if any. */
+    data class Source(val key: String, val playerId: UUID?) : LeaderboardRowKey {
+        override val stableKey: String = "source:$key"
+    }
 }
 
-/** A rendered row using Typewriter's native world and group identifiers. */
+/**
+ * A rendered row using Typewriter's native world and group identifiers.
+ * [scoreText] is what `{score}` shows (a fact row shows its number as is); [values] are the `{value_<key>}` tokens.
+ * Texts coming from a source are already escaped for MiniMessage.
+ */
 data class LeaderboardRow(
     val key: LeaderboardRowKey,
     val name: String,
-    val score: Int,
+    val score: Long,
     val groupId: GroupId? = null,
     val world: World? = null,
     val factScores: Map<String, Int> = emptyMap(),
+    val scoreText: String = score.toString(),
+    val values: Map<String, String> = emptyMap(),
 ) {
-    constructor(key: LeaderboardRowKey, name: String, score: Int) : this(key, name, score, null, null, emptyMap())
+    constructor(key: LeaderboardRowKey, name: String, score: Int) : this(key, name, score.toLong(), null, null, emptyMap())
 }
 
 /** Resolves live values plus extension-owned offline snapshots into deterministic rankings. */
@@ -59,6 +73,7 @@ object LeaderboardService {
     private val reportedFailures = ConcurrentHashMap.newKeySet<String>()
 
     fun rank(entry: GuiLeaderboardEntry, viewer: Player, context: InteractionContext): List<LeaderboardRow> {
+        if (entry.source.isSet) return rankSource(entry, viewer, context)
         val facts = entry.facts.mapNotNull { it.get() }.distinctBy { it.id }
         if (facts.isEmpty()) return emptyList()
 
@@ -107,6 +122,32 @@ object LeaderboardService {
         return LeaderboardRanking.order(rows, entry.order, entry.includeZero, entry.limit)
     }
 
+    private fun rankSource(entry: GuiLeaderboardEntry, viewer: Player, context: InteractionContext): List<LeaderboardRow> {
+        if (entry.facts.isNotEmpty() && reportedFailures.add("source+facts:${entry.id}")) {
+            logger.warning("Leaderboard '${entry.id}' sets both a source and facts: the facts are ignored.")
+        }
+        val source = entry.source.get()
+        if (source == null) {
+            if (reportedFailures.add("source-missing:${entry.id}")) {
+                logger.warning("Leaderboard '${entry.id}' references the source '${entry.source.id}', which does not exist.")
+            }
+            return emptyList()
+        }
+        val rows = rowsFromSource(entry.id) { source.leaderboardRows(viewer, context) }
+        return LeaderboardRanking.order(rows, entry.order, entry.includeZero, entry.limit)
+    }
+
+    /** A failing source must not break the menu: log once per leaderboard and failure type, show no rows. */
+    internal fun rowsFromSource(entryId: String, supplier: () -> List<LeaderboardSourceRow>): List<LeaderboardRow> =
+        try {
+            supplier().map { it.toRow() }
+        } catch (failure: Exception) {
+            if (reportedFailures.add("source:$entryId:${failure::class.java.name}")) {
+                logger.log(Level.WARNING, "Leaderboard '$entryId': its source failed, showing no rows.", failure)
+            }
+            emptyList()
+        }
+
     private fun rowForPlayer(
         snapshot: LeaderboardPopulationSnapshot,
         entry: GuiLeaderboardEntry,
@@ -117,7 +158,7 @@ object LeaderboardService {
         return LeaderboardRow(
             key = LeaderboardRowKey.Player(snapshot.uuid),
             name = snapshot.name,
-            score = combine(selectedScores.values.toList(), mode),
+            score = combine(selectedScores.values.toList(), mode).toLong(),
             groupId = snapshot.groupIds[entry.group.id].takeIf { entry.group.isSet },
             world = snapshot.position?.world,
             factScores = selectedScores,
@@ -136,7 +177,7 @@ object LeaderboardService {
         val factScores = facts.associate { fact ->
             fact.id to members.sumOf { it.factScores[fact.id] ?: 0 }
         }
-        return LeaderboardRow(key, name, combine(factScores.values.toList(), mode), groupId, world, factScores)
+        return LeaderboardRow(key, name, combine(factScores.values.toList(), mode).toLong(), groupId, world, factScores)
     }
 
     private fun resolveWorlds(
@@ -173,7 +214,7 @@ object LeaderboardService {
 
 object LeaderboardRanking {
     fun order(rows: List<LeaderboardRow>, order: LeaderboardOrder, includeZero: Boolean, limit: Int): List<LeaderboardRow> {
-        val filtered = if (includeZero) rows else rows.filter { it.score != 0 }
+        val filtered = if (includeZero) rows else rows.filter { it.score != 0L }
         val comparator = Comparator<LeaderboardRow> { left, right ->
             val scoreComparison = left.score.compareTo(right.score)
             val orderedScore = if (order == LeaderboardOrder.DESCENDING) -scoreComparison else scoreComparison
@@ -238,15 +279,36 @@ class LeaderboardLayout(
 private fun LeaderboardRow.subject(): Player? = subjectUuid()?.let(Bukkit::getPlayer)
 
 /** Identity a row's content speaks about; world and group rows have none. Pure, so it is unit tested. */
-internal fun LeaderboardRow.subjectUuid(): UUID? = (key as? LeaderboardRowKey.Player)?.uuid
+internal fun LeaderboardRow.subjectUuid(): UUID? = when (key) {
+    is LeaderboardRowKey.Player -> key.uuid
+    is LeaderboardRowKey.Source -> key.playerId
+    is LeaderboardRowKey.World, is LeaderboardRowKey.Group -> null
+}
 
-private fun LeaderboardRow.tokens(rank: Int): Map<String, String> = buildMap {
+/**
+ * Texts of a source come from its data, possibly typed by players (names, profile labels): they are escaped
+ * so that no tag in them can restyle the menu, whatever the source did.
+ */
+internal fun LeaderboardSourceRow.toRow(): LeaderboardRow = LeaderboardRow(
+    key = LeaderboardRowKey.Source(key, playerId),
+    name = escapeMini(name),
+    score = score,
+    scoreText = escapeMini(scoreText),
+    values = values.mapValues { escapeMini(it.value) },
+)
+
+private fun escapeMini(text: String): String = MiniMessage.miniMessage().escapeTags(text)
+
+internal fun LeaderboardRow.tokens(rank: Int): Map<String, String> = buildMap {
     put("{rank}", rank.toString())
     put("{name}", name)
-    put("{score}", score.toString())
+    put("{score}", scoreText)
+    put("{score_raw}", score.toString())
     put("{group}", groupId?.id.orEmpty())
     put("{world}", world?.let { it.displayTokenName() }.orEmpty())
     factScores.forEach { (factId, value) -> put("{score_$factId}", value.toString()) }
+    // Explicit receiver: inside buildMap a bare `values` is the map being built.
+    this@tokens.values.forEach { (valueKey, value) -> put("{value_$valueKey}", value) }
 }
 
 private fun World.displayTokenName(): String = runCatching {

@@ -21,6 +21,9 @@ dependencies {
     compileOnly("com.github.retrooper:packetevents-spigot:2.11.0")
     testImplementation(kotlin("test"))
     testImplementation("com.google.code.gson:gson:2.13.1")
+    // Same Adventure line the engine resolves: lets the tests prove that source texts cannot inject tags.
+    testImplementation("net.kyori:adventure-text-minimessage:5.1.1")
+    testImplementation("net.kyori:adventure-text-serializer-plain:5.1.1")
 }
 
 typewriter {

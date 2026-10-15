@@ -214,6 +214,20 @@ their native `World` value. Useful row tokens are `{rank}`, `{name}`, `{score}`,
 `{world}` and `{score_<fact_id>}`. Set `autoRefreshTicks` on the `open_gui` entry when the facts
 must refresh while the menu is open.
 
+### Leaderboard sources
+
+Another extension can feed a `gui_leaderboard` with its own statistics, offline players included, by
+providing an entry that implements `GuiLeaderboardSourceEntry` (tag `gui_leaderboard_source`) and
+returning `LeaderboardSourceRow` values from `leaderboardRows(viewer, context)`. Reference that entry in
+the `source` field of the `gui_leaderboard`: the rows then come from the source (`facts`, `scope`,
+`group`, `population`, `worlds` and `scoreMode` are ignored, with a warning in the log when `facts` is
+also set), while `order`, `limit`, `includeZero` and the row texts still apply. Rows are ranked by their
+`Long` `score`. Extra tokens: `{score}` shows the row's `scoreText`, `{score_raw}` the number, and
+`{value_<key>}` the matching entry of the row's `values`. `name`, `scoreText` and `values` are plain
+text: the extension escapes them before MiniMessage, so a player-chosen label cannot restyle the menu.
+The source is called on the thread that renders the menu, at every refresh: it must answer from memory.
+A source that throws is logged once and shows an empty list.
+
 ## Vanilla GUIs
 
 Supports Minecraft's built-in GUI types: `ANVIL`, `ENCHANTING_TABLE`, `SMITHING`, `STONECUTTER`, `GRINDSTONE`, `LOOM`, `CARTOGRAPHY`, `MERCHANT`, `BOOK`.
