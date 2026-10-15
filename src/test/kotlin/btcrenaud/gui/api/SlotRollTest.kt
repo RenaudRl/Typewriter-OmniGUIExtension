@@ -67,6 +67,47 @@ class SlotRollTest {
         }
     }
 
+    // liveItem: a paint visits the cells in order and each paint rolls again.
+    private fun paints(live: SlotRoll.LiveDraw<String>, roll: () -> String, cells: List<Int>, count: Int) =
+        List(count) { cells.map { cell -> live.next(cell, roll) } }
+
+    @Test
+    fun `liveItem with rollPerSlot rolls once per cell at every paint`() {
+        var rolls = 0
+        val painted = paints(SlotRoll.LiveDraw(rollPerSlot = true), { "d${++rolls}" }, listOf(0, 1, 2), 3)
+
+        assertEquals(9, rolls)
+        assertEquals(listOf("d1", "d2", "d3"), painted.first())
+        assertEquals(listOf("d7", "d8", "d9"), painted.last())
+    }
+
+    @Test
+    fun `liveItem without rollPerSlot rolls once per paint and shares it between the cells`() {
+        var rolls = 0
+        val painted = paints(SlotRoll.LiveDraw(rollPerSlot = false), { "d${++rolls}" }, listOf(0, 1, 2), 3)
+
+        assertEquals(3, rolls)
+        assertEquals(listOf(listOf("d1", "d1", "d1"), listOf("d2", "d2", "d2"), listOf("d3", "d3", "d3")), painted)
+    }
+
+    @Test
+    fun `liveItem rolls again at every paint even when only one cell is visible`() {
+        var rolls = 0
+        val painted = paints(SlotRoll.LiveDraw(rollPerSlot = false), { "d${++rolls}" }, listOf(4), 3)
+
+        assertEquals(listOf(listOf("d1"), listOf("d2"), listOf("d3")), painted)
+    }
+
+    @Test
+    fun `liveItem still follows a blank name while the item changes`() {
+        var rolls = 0
+        val live = SlotRoll.LiveDraw<String>(rollPerSlot = false)
+
+        val renders = nameAtRender.indices.map { render -> decorate(live.next(0) { "d${++rolls}" }, render) }
+
+        assertEquals(listOf("A#d1", "-#d2", "-#d3", "B#d4"), renders)
+    }
+
     @Test
     fun `no cell means no roll`() {
         var rolls = 0

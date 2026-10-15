@@ -33,4 +33,27 @@ object SlotRoll {
      * can change between two renders (a variable that turns blank, a lore added by a placeholder).
      */
     fun <T, P> refresher(drawn: T, decorate: (T, P) -> T): (P) -> T = { target -> decorate(drawn, target) }
+
+    /**
+     * The opt-in counterpart of [refresher] (`liveItem`): the item is rolled again at every paint.
+     * One instance serves all the cells of one item, which a paint visits in cell order.
+     *
+     * With [rollPerSlot] on, every call rolls. With it off, the cells of one paint share one roll.
+     * Providers get no render id, so a new paint is recognised by the cell order not increasing.
+     * shortcut: if a paint only reaches higher cells than the previous one (a lower cell newly
+     * hidden by another slot), it reuses the previous shared roll once; upgrade by handing a
+     * render id to item providers.
+     */
+    class LiveDraw<T>(private val rollPerSlot: Boolean) {
+        private var lastCell = Int.MAX_VALUE
+        private var shared: Any? = null
+
+        fun next(cell: Int, roll: () -> T): T {
+            if (rollPerSlot) return roll()
+            if (cell <= lastCell) shared = roll()
+            lastCell = cell
+            @Suppress("UNCHECKED_CAST")
+            return shared as T
+        }
+    }
 }

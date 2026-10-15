@@ -18,6 +18,9 @@
 - `rollPerSlot` on an item: for an item repeated over several slots with a random `item`, each slot
   rolls on its own when the menu opens (off = one roll shared by every slot). The result is kept for
   the whole time the menu is open, including across `autoRefreshTicks` refreshes.
+- `liveItem` on an item: the item (a variable) is evaluated again at every refresh instead of being kept
+  for the session, so a random item is drawn again each time; `rollPerSlot` then chooses one draw per
+  slot or one shared by all the slots of the item at each refresh.
 - `dropOnClose` and `closeDelivery` (`GIVE_OR_DROP` or `DROP`) on a `simple` layout: when the menu
   closes, what still sits in its slots that have `allowPickup` (loot not taken, or an item the player
   put there) is handed back instead of vanishing. `GIVE_OR_DROP` goes into the inventory and drops the
